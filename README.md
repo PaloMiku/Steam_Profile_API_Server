@@ -19,8 +19,8 @@
 ### 前置要求
 
 - Node.js 18+
-- Steam Web API Key（获取地址：<https://steamcommunity.com/dev/apikey）>
-- 你的 Steam ID 64位号码（查询：<https://steamid.io）>
+- Steam Web API Key（获取地址：<https://steamcommunity.com/dev/apikey>
+- 你的 Steam ID 64位号码（查询：<https://steamid.io>
 
 ### 最快部署（选择一个平台）
 
@@ -56,8 +56,8 @@ npm run start
 
 ```bash
 # 1. 克隆仓库
-git clone <your-repo-url>
-cd Steam-Profile-API
+git clone https://github.com/PaloMiku/Steam_Profile_API_Server
+cd Steam_Profile_API_Server
 
 # 2. 安装依赖
 npm install
