@@ -232,6 +232,11 @@ export interface RecentGame {
   images: GameImages;
   releaseDate: string;
   shortDescription: string;
+  achievements?: {
+    total: number;
+    unlocked: number;
+    percentage: number;
+  };
 }
 
 export interface AllGame {
@@ -247,6 +252,7 @@ export interface AllGame {
 
 export interface GamesData {
   totalCount: number;
+  recentCount: number;
   recentGames: RecentGame[];
   allGames: AllGame[];
 }

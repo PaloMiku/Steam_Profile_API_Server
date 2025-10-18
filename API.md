@@ -150,7 +150,8 @@ Accept: application/json
 {
   "games": {
     "totalCount": 150,                        // 拥有的游戏总数
-    "recentGames": [                          // 最近玩过的5个游戏详细信息
+    "recentCount": 10,                        // 最近玩过的游戏数量
+    "recentGames": [                          // 最近玩过的游戏详细信息
       {
         "appid": 570,
         "name": "Dota 2",
@@ -169,15 +170,20 @@ Accept: application/json
           "libraryHeroImage": "https://cdn.cloudflare.steamstatic.com/steam/apps/570/library_hero.jpg"
         },
         "releaseDate": "2011-04-09",
-        "shortDescription": "Every day, millions of players worldwide enter battle as one of over a hundred Dota heroes..."
+        "shortDescription": "Every day, millions of players worldwide enter battle as one of over a hundred Dota heroes...",
+        "achievements": {                     // 该游戏的成就统计
+          "total": 14,                        // 该游戏的成就总数
+          "unlocked": 10,                     // 该游戏已解锁成就数
+          "percentage": 71                    // 完成百分比
+        }
       }
     ],
     "allGames": [                             // 所有拥有游戏的简略信息
       {
         "appid": 570,
         "name": "Dota 2",
-        "playtimeForever": 3600,              // 总游玩时长（分钟）
-        "playtimeTwoWeeks": 120,              // 两周内游玩时长（分钟）
+        "playtimeForever": 3600,              // 总游玩时长（小时）
+        "playtimeTwoWeeks": 120,              // 两周内游玩时长（小时）
         "images": {
           "icon": "https://media.steampowered.com/steamcommunity/public/images/apps/570/..._icon.jpg",
           "headerImage": "https://cdn.cloudflare.steamstatic.com/steam/apps/570/header.jpg"
@@ -193,7 +199,8 @@ Accept: application/json
 | 字段 | 类型 | 说明 |
 |-----|-----|------|
 | `totalCount` | number | 拥有的游戏总数 |
-| `recentGames` | array | 最近玩过的游戏（最多5个）详细信息 |
+| `recentCount` | number | 最近玩过的游戏数量 |
+| `recentGames` | array | 最近玩过的游戏详细信息 |
 | `allGames` | array | 所有拥有游戏的简略信息 |
 
 **RecentGame 字段：**
@@ -202,25 +209,24 @@ Accept: application/json
 |-----|-----|------|
 | `appid` | number | Steam 应用 ID |
 | `name` | string | 游戏名称 |
-| `playtimeForever` | number | 总游玩时长（分钟） |
-| `playtimeTwoWeeks` | number | 近两周游玩时长（分钟） |
+| `playtimeForever` | number | 总游玩时长（小时） |
+| `playtimeTwoWeeks` | number | 近两周游玩时长（小时） |
 | `price.amount` | number | 价格（美分），0表示免费 |
 | `price.currency` | string | 货币代码（如 USD、CNY） |
 | `price.displayPrice` | string | 格式化的价格显示 |
 | `images.*` | string | 游戏相关图片的 Steam CDN URL |
 | `releaseDate` | string | 发布日期（YYYY-MM-DD） |
 | `shortDescription` | string | 游戏简介 |
+| `achievements.total` | number | 该游戏的成就总数（可选） |
+| `achievements.unlocked` | number | 该游戏已解锁的成就数（可选） |
+| `achievements.percentage` | number | 该游戏的成就完成百分比（可选） |
 
-**AllGame 字段：**
+**重要说明：**
 
-| 字段 | 类型 | 说明 |
-|-----|-----|------|
-| `appid` | number | Steam 应用 ID |
-| `name` | string | 游戏名称 |
-| `playtimeForever` | number | 总游玩时长（分钟） |
-| `playtimeTwoWeeks` | number | 近两周游玩时长（分钟） |
-| `images.icon` | string | 游戏小图标 (32x32) |
-| `images.headerImage` | string | 游戏列表头图 (460x215) |
+- `recentGames` 中返回的游戏与 `achievements.byGame` 中的游戏完全对应
+- 每个最近游戏都包含了其成就统计信息（`total`、`unlocked`、`percentage`）
+- `achievements.byGame` 中提供了该游戏所有成就的详细信息（成就列表）
+- `achievements.totalCount` 和 `unlockedCount` 是所有这些游戏的成就总和
 
 **图片 URL 说明：**
 
@@ -424,13 +430,19 @@ Accept: application/json
 
 ---
 
-## 缓存策略
+## 配置选项
 
-API 使用分层缓存策略：
+### 最近游戏配置
+
+| 环境变量 | 说明 | 默认值 |
+|--------|------|-------|
+| `RECENTLY_PLAYED_COUNT` | 最近玩过的游戏数量（从 Steam 获取并返回的数量） | 10 |
+
+### 缓存配置
 
 | 数据类型 | 默认 TTL | 环境变量 |
 |--------|---------|---------|
-| 用户信息 | 5 分钟 | `CACHE_TTL_USER_MINUTES` |
+| 用户信息 | 10 分钟 | `CACHE_TTL_USER_MINUTES` |
 | 游戏信息 | 24 小时 | `CACHE_TTL_GAMES_HOURS` |
 | 成就信息 | 1 小时 | `CACHE_TTL_ACHIEVEMENTS_HOURS` |
 
@@ -488,7 +500,11 @@ A: 目前不支持。请等待缓存过期或重启服务器。
 
 **Q: 支持哪些成就？**
 
-A: 所有有成就系统的 Steam 游戏。API 默认返回最近玩过的前 5 个游戏的成就。
+A: 所有有成就系统的 Steam 游戏。API 返回最近玩过的游戏（默认前 10 个）的成就详情。可通过 `RECENTLY_PLAYED_COUNT` 环境变量配置返回的游戏数量。
+
+**Q: 如何修改最近游戏的数量？**
+
+A: 设置 `RECENTLY_PLAYED_COUNT` 环境变量。例如，设置为 `20` 会返回最近玩过的 20 个游戏及其成就信息。
 
 **Q: 图片加载失败怎么办？**
 
