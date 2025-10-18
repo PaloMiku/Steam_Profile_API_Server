@@ -39,3 +39,7 @@ coverage
 
 # Vercel
 .vercel
+
+# Netlify generated functions (auto-generated from api/ during build)
+netlify/functions/*.ts
+!netlify/functions/.gitkeep

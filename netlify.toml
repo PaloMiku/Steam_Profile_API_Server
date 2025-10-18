@@ -1,5 +1,5 @@
 [build]
-  command = "npm run build"
+  command = "DEPLOY_TARGET=netlify npm run build"
   functions = "netlify/functions"
   publish = "dist"
 
