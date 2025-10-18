@@ -73,20 +73,26 @@ export async function handleSteamUserRequest(
 
     const playerInfo = playerSummaries[0];
     const statusInfo = getStatusText(playerInfo.personastate);
+    
+    // 2. 根据玩家所在国家设置币种
+    if (playerInfo.loccountrycode) {
+      Logger.log(`Detected player country: ${playerInfo.loccountrycode}`);
+      steamApi.setCountryCode(playerInfo.loccountrycode);
+    }
 
-    // 2. 获取拥有的游戏
+    // 3. 获取拥有的游戏
     Logger.log('Fetching owned games...');
     const allGames = await steamApi.getOwnedGames(steamUserId, true);
 
-    // 3. 获取最近游戏
+    // 4. 获取最近游戏
     Logger.log('Fetching recently played games...');
     const recentlyPlayed = await steamApi.getRecentlyPlayedGames(steamUserId, 20);
 
-    // 4. 获取前 5 个最近游戏的详细信息
+    // 5. 获取前 5 个最近游戏的详细信息
     const topRecentAppIds = recentlyPlayed.slice(0, 5).map(g => g.appid);
     const gameDetailsMap = await steamApi.getGameDetails(topRecentAppIds);
 
-    // 5. 获取成就信息（对最近游戏的前 5 个）
+    // 6. 获取成就信息（对最近游戏的前 5 个）
     Logger.log('Fetching achievements...');
     const achievementsDataMap: Record<
       number,
@@ -105,6 +111,8 @@ export async function handleSteamUserRequest(
         Logger.warn(`Failed to fetch achievements for app ${appId}`);
       }
     }
+
+    // 7. 构建响应数据
 
     // 6. 构建响应数据
     const recentGames = recentlyPlayed.slice(0, 10).map(game => {
