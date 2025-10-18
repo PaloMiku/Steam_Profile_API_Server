@@ -1,0 +1,16 @@
+{
+  "buildCommand": "npm run build",
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "nodejs20.x"
+    }
+  },
+  "regions": ["icn1"],
+  "env": [
+    "STEAM_API_KEY",
+    "STEAM_USER_ID",
+    "CACHE_TTL_USER_MINUTES",
+    "CACHE_TTL_GAMES_HOURS",
+    "CACHE_TTL_ACHIEVEMENTS_HOURS"
+  ]
+}

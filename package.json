@@ -1,0 +1,41 @@
+{
+  "name": "steam-profile-api",
+  "version": "1.0.0",
+  "description": "Serverless API to fetch Steam user profile information including games and achievements with image URLs",
+  "main": "dist/server.js",
+  "type": "module",
+  "scripts": {
+    "prebuild": "tsx scripts/build.ts",
+    "build": "tsc",
+    "dev": "tsx watch server.ts",
+    "start": "node dist/server.js",
+    "test": "node --test dist/**/*.test.js"
+  },
+  "keywords": [
+    "steam",
+    "api",
+    "vercel",
+    "netlify",
+    "cloudflare-worker",
+    "serverless",
+    "games",
+    "achievements"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "@vercel/node": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0",
+    "@types/express": "^4.17.20",
+    "typescript": "^5.2.2",
+    "tsx": "^3.13.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

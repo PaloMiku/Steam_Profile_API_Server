@@ -1,0 +1,28 @@
+[build]
+  command = "npm run build"
+  functions = "netlify/functions"
+  publish = "dist"
+
+[template.environment]
+  SECRET_TOKEN = "change me for your secret token"
+  CUSTOM_LOGO = "set the url to your custom logo here"
+  # 必需配置
+  # [必需] Steam Web API 密钥 - 从 https://steamcommunity.com/dev/apikey 获取
+  STEAM_API_KEY = "your_steam_api_key_here"
+  # [必需] Steam 用户 ID (64位) - 你自己的 Steam ID
+  # 查询方式: https://steamid.io/ 或访问你的 Steam 个人资料页面
+  STEAM_USER_ID = "76561198xxxxxxxxx"
+
+  # 缓存配置（默认值）
+  CACHE_TTL_USER_MINUTES = "10"
+  CACHE_TTL_GAMES_HOURS = "24"
+  CACHE_TTL_ACHIEVEMENTS_HOURS = "1"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["axios"]
