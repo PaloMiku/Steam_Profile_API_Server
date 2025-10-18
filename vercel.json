@@ -2,7 +2,7 @@
   "buildCommand": "npm run build",
   "functions": {
     "api/**/*.ts": {
-      "runtime": "nodejs20.x"
+    "runtime": "nodejs"
     }
   },
   "regions": ["icn1"],
