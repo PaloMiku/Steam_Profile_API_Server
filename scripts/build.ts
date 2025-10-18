@@ -73,43 +73,17 @@ function generateVercelEntry(): void {
 }
 
 function generateNetlifyEntry(): void {
-  // Netlify 使用 api/ 目录中的文件，但需要复制到 netlify/functions/
-  // 自动从 api/ 复制所有 .ts 文件到 netlify/functions/
-  copyApiFilesToNetlify();
-  console.log('✓ Netlify: Copied ./api/*.ts to ./netlify/functions/');
+  // Netlify 使用 netlify/functions/ 目录下的文件
+  // 这些文件是手动维护的 TypeScript 文件，使用 Request/Response API
+  console.log('✓ Netlify: Using ./netlify/functions/*.ts');
 }
 
 /**
  * 将 api/ 目录中的所有 .ts 文件复制到 netlify/functions/
+ * 已弃用 - Netlify 函数现在手动维护
  */
 function copyApiFilesToNetlify(): void {
-  const apiDir = path.join(projectRoot, 'api');
-  const netlifyFunctionsDir = path.join(projectRoot, 'netlify', 'functions');
-
-  // 确保 netlify/functions 目录存在
-  if (!fs.existsSync(netlifyFunctionsDir)) {
-    fs.mkdirSync(netlifyFunctionsDir, { recursive: true });
-  }
-
-  // 读取 api 目录中的所有 .ts 文件
-  if (fs.existsSync(apiDir)) {
-    const files = fs.readdirSync(apiDir).filter(file => file.endsWith('.ts'));
-    
-    for (const file of files) {
-      const srcPath = path.join(apiDir, file);
-      const destPath = path.join(netlifyFunctionsDir, file);
-      
-      // 读取源文件内容
-      let content = fs.readFileSync(srcPath, 'utf-8');
-      
-      // 替换导入路径（因为 netlify/functions 比 api 多一层目录）
-      content = content.replace(/from ['"]\.\.\/lib\//g, "from '../../lib/");
-      
-      // 写入目标文件
-      fs.writeFileSync(destPath, content);
-      console.log(`   → Copied ${file}`);
-    }
-  }
+  // Removed - Netlify functions are now manually maintained
 }
 
 function generateCloudflareEntry(): void {
