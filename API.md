@@ -35,24 +35,35 @@ Steam Profile API 是一个 RESTful API，用于获取配置用户的 Steam 个�
 
 **使用场景：**
 
-- 需要完整数据：调用 `/api/steam-user`
-- 只需要游戏库信息：调用 `/api/steam-games`（数据量小，响应快）
-- 只需要成就详情：调用 `/api/steam-achievements`
-- 优化性能：分别调用各端点，按需缓存
+- 需要用户基本信息（名称、头像、游戏总数）：调用 `/api/steam-user` 
+- 需要游戏库和最近游戏详情：调用 `/api/steam-games`（包含价格、发布日期、成就统计）
+- 需要成就详细列表：调用 `/api/steam-achievements`（包含每个成就的解锁状态）
+- 优化性能：分别调用各端点，按需获取，各端点独立缓存
 
-**重要说明（端点行为）**
+**端点职责分离（明确划分，避免冗余调用）**
 
-- 每个端点只会触发其所需的 Steam API 调用。例如：
-  - `/api/steam-user` 会聚合用户信息、游戏统计和成就统计；
-  - `/api/steam-games` 仅获取游戏库、最近游玩和成就汇总（不返回每个成就的详细列表）；
-  - `/api/steam-achievements` 返回按游戏分组的成就详细列表。
-- 本地开发（localhost）与生产环境（Vercel/Netlify/自托管）行为一致：不会因为运行环境不同而在单一端点触发额外的网络请求。
-- 这样可以避免单次请求发出所有可能的 Steam API 调用，从而显著降低首次请求延迟。
+为了保持查询快速响应，三个端点职责完全分离，各自只发起必要的 Steam API 请求：
 
-预计延迟（仅作参考）:
+| 端点 | 调用的 Steam API | 返回数据 | 注意事项 |
+|-----|-----------------|--------|--------|
+| `/api/steam-user` | `GetPlayerSummaries`<br/>`GetOwnedGames` | 用户资料、游戏数量、游玩时长统计 | **不包含**游戏列表、成就数据 |
+| `/api/steam-games` | `GetOwnedGames`<br/>`GetRecentlyPlayedGames`<br/>`GetGameDetails`<br/>`GetPlayerAchievements` | 游戏库（前100个）、最近游戏、成就统计 | **不包含**用户资料、成就详细列表 |
+| `/api/steam-achievements` | `GetRecentlyPlayedGames`<br/>`GetOwnedGames`<br/>`GetPlayerAchievements` | 按游戏分组的成就详细列表 | **不包含**用户资料、游戏库详情 |
 
-- 首次请求（未命中缓存）：约 2-5 秒，取决于 Steam API 响应速度与请求数量。
-- 缓存命中：通常 < 10ms。
+**为什么这样设计？**
+
+- ✅ 每个端点只做自己的事，避免不必要的网络请求
+- ✅ 本地开发和生产环境行为完全一致（无环境相关的额外调用）
+- ✅ 客户端可以按需调用，不用一次性加载所有数据
+- ✅ 独立的缓存策略（用户信息10分钟、游戏24小时、成就1小时）
+
+**预期延迟（仅作参考）**
+
+- 首次请求（未命中缓存）：
+  - `/api/steam-user`：1-2 秒（仅两个 API 调用）
+  - `/api/steam-games`：2-4 秒（需要获取最近游戏的详情和成就）
+  - `/api/steam-achievements`：3-5 秒（需要获取所有成就详情）
+- 缓存命中：通常 < 10ms
 
 ## 请求
 
@@ -116,13 +127,25 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 
 ### 成功响应 (200 OK)
 
+**`/api/steam-user` 响应示例：**
 ```json
 {
   "success": true,
   "data": {
-    "user": { ... },
-    "games": { ... },
-    "achievements": { ... }
+    "user": {
+      "steamid": "76561198123456789",
+      "username": "YourUsername",
+      "profileUrl": "https://steamcommunity.com/profiles/76561198123456789",
+      "avatar": {
+        "small": "https://avatars.steamstatic.com/...jpg",
+        "medium": "https://avatars.steamstatic.com/...jpg",
+        "large": "https://avatars.steamstatic.com/...jpg"
+      },
+      "status": "online",
+      "statusMessage": "In-game",
+      "currentGame": { "appid": 570, "name": "Dota 2" },
+      "playtimeStats": { "totalForever": 1200, "totalTwoWeeks": 50 }
+    }
   },
   "metadata": {
     "cached": true,
@@ -130,6 +153,47 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
     "cacheExpiry": "2025-10-18T12:39:56.789Z",
     "fetchDuration": "1234ms"
   }
+}
+```
+
+**`/api/steam-games` 响应示例：**
+```json
+{
+  "success": true,
+  "data": {
+    "games": {
+      "totalCount": 150,
+      "recentCount": 3,
+      "recentGames": [{ "appid": 570, "name": "Dota 2", "achievements": { "total": 14, "unlocked": 10, "percentage": 71 } }],
+      "allGames": [{ "appid": 570, "name": "Dota 2", "achievements": { "total": 14, "unlocked": 10, "percentage": 71 } }]
+    }
+  },
+  "metadata": { "cached": false, "cachedAt": "2025-10-18T12:34:56.789Z", "cacheExpiry": "2025-10-18T13:34:56.789Z", "fetchDuration": "3456ms" }
+}
+```
+
+**`/api/steam-achievements` 响应示例：**
+```json
+{
+  "success": true,
+  "data": {
+    "achievements": {
+      "totalCount": 250,
+      "unlockedCount": 125,
+      "unlockedPercentage": 50,
+      "byGame": [
+        {
+          "appid": 570,
+          "gameName": "Dota 2",
+          "total": 100,
+          "unlocked": 50,
+          "percentage": 50,
+          "items": [{ "name": "FIRST_BLOOD", "description": "Get a first blood", "unlocked": true, "unlockTime": 1634567890, "images": { "icon": "...", "iconGray": "..." } }]
+        }
+      ]
+    }
+  },
+  "metadata": { "cached": true, "cachedAt": "2025-10-18T12:34:56.789Z", "cacheExpiry": "2025-10-18T13:34:56.789Z", "fetchDuration": "1200ms" }
 }
 ```
 
@@ -147,7 +211,22 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 
 ## 响应数据结构详解
 
-### 1. User 对象
+### 端点返回的顶级结构
+
+每个端点返回不同的数据结构，体现职责分离原则：
+
+```typescript
+// /api/steam-user 返回
+{ "user": { ... } }
+
+// /api/steam-games 返回
+{ "games": { ... } }
+
+// /api/steam-achievements 返回
+{ "achievements": { ... } }
+```
+
+### 1. User 对象（/api/steam-user）
 
 用户基本信息和状态。
 
@@ -206,7 +285,7 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 
 ---
 
-### 2. Games 对象
+### 2. Games 对象（/api/steam-games）
 
 游戏库信息。
 
@@ -316,7 +395,7 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 
 ---
 
-### 3. Achievements 对象
+### 3. Achievements 对象（/api/steam-achievements）
 
 成就信息。
 
@@ -384,7 +463,7 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 
 ---
 
-### 4. Metadata 对象
+### 4. Metadata 对象（所有端点）
 
 响应元数据。
 

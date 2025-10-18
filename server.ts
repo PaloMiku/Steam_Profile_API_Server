@@ -213,8 +213,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log('  ╚═══════════════════════════════════════════════╝');
     console.log('\n');
     console.log(`  ✓ Server running at: \x1b[36mhttp://localhost:${PORT}\x1b[0m`);
-    console.log(`  ✓ API endpoint:      \x1b[36mhttp://localhost:${PORT}/api/steam-user\x1b[0m`);
-    console.log(`  ✓ Health check:      \x1b[36mhttp://localhost:${PORT}/health\x1b[0m`);
+    console.log('\n  📌 API Endpoints:');
+    console.log(`     • User Info:        \x1b[36mGET /api/steam-user\x1b[0m`);
+    console.log(`     • Games Library:    \x1b[36mGET /api/steam-games\x1b[0m`);
+    console.log(`     • Achievements:     \x1b[36mGET /api/steam-achievements\x1b[0m`);
+    console.log(`\n  • Health check:      \x1b[36mGET /health\x1b[0m`);
     console.log('\n');
   });
 

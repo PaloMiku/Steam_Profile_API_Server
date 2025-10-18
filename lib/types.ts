@@ -303,11 +303,21 @@ export interface UserInfo {
   };
 }
 
-export interface ResponseData {
+// 端点专用响应类型
+export interface UserResponse {
   user: UserInfo;
+}
+
+export interface GamesResponse {
   games: GamesData;
+}
+
+export interface AchievementsResponse {
   achievements: AchievementsData;
 }
+
+// 向后兼容：如果某些地方还用 ResponseData
+export type ResponseData = UserResponse | GamesResponse | AchievementsResponse;
 
 export interface Metadata {
   cached: boolean;
@@ -318,7 +328,7 @@ export interface Metadata {
 
 export interface SuccessResponse {
   success: true;
-  data: ResponseData;
+  data: UserResponse | GamesResponse | AchievementsResponse;
   metadata: Metadata;
 }
 
