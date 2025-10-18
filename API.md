@@ -178,7 +178,7 @@ Accept: application/json
         }
       }
     ],
-    "allGames": [                             // 所有拥有游戏的简略信息
+    "allGames": [                             // 所有拥有游戏的简略信息（最多100个）
       {
         "appid": 570,
         "name": "Dota 2",
@@ -187,6 +187,11 @@ Accept: application/json
         "images": {
           "icon": "https://media.steampowered.com/steamcommunity/public/images/apps/570/..._icon.jpg",
           "headerImage": "https://cdn.cloudflare.steamstatic.com/steam/apps/570/header.jpg"
+        },
+        "achievements": {                     // 该游戏的成就统计（可选）
+          "total": 14,
+          "unlocked": 10,
+          "percentage": 71
         }
       }
     ]
@@ -199,9 +204,14 @@ Accept: application/json
 | 字段 | 类型 | 说明 |
 |-----|-----|------|
 | `totalCount` | number | 拥有的游戏总数 |
-| `recentCount` | number | 最近玩过的游戏数量 |
-| `recentGames` | array | 最近玩过的游戏详细信息 |
-| `allGames` | array | 所有拥有游戏的简略信息 |
+| `recentCount` | number | 最近两周内玩过的游戏总数（根据 Steam API 返回的 `total_count`） |
+| `recentGames` | array | 最近玩过的游戏详细信息（实际返回的数量 ≤ recentCount） |
+| `allGames` | array | 所有拥有游戏的简略信息（最多100个） |
+
+**重要说明：**
+- `recentCount` 表示用户在最近两周内玩过的**所有游戏总数**
+- `recentGames` 中返回的游戏数量可能少于 `recentCount`（取决于 `RECENTLY_PLAYED_COUNT` 配置）
+- 例如：如果 `recentCount=5` 但 `RECENTLY_PLAYED_COUNT=10`，则 `recentGames` 只会包含5个游戏
 
 **RecentGame 字段：**
 
@@ -225,8 +235,9 @@ Accept: application/json
 
 - `recentGames` 中返回的游戏与 `achievements.byGame` 中的游戏完全对应
 - 每个最近游戏都包含了其成就统计信息（`total`、`unlocked`、`percentage`）
-- `achievements.byGame` 中提供了该游戏所有成就的详细信息（成就列表）
-- `achievements.totalCount` 和 `unlockedCount` 是所有这些游戏的成就总和
+- `allGames` 中的前50个游戏也包含成就统计信息
+- `achievements.byGame` 中提供了这些游戏所有成就的详细信息（成就列表）
+- `achievements.totalCount` 和 `unlockedCount` 是所有这些游戏（最近游戏 + 游戏库前50个）的成就总和
 
 **图片 URL 说明：**
 
@@ -502,9 +513,9 @@ A: 目前不支持。请等待缓存过期或重启服务器。
 
 A: 所有有成就系统的 Steam 游戏。API 返回最近玩过的游戏（默认前 10 个）的成就详情。可通过 `RECENTLY_PLAYED_COUNT` 环境变量配置返回的游戏数量。
 
-**Q: 如何修改最近游戏的数量？**
+**Q: 为什么返回的最近游戏数量少于配置的 RECENTLY_PLAYED_COUNT？**
 
-A: 设置 `RECENTLY_PLAYED_COUNT` 环境变量。例如，设置为 `20` 会返回最近玩过的 20 个游戏及其成就信息。
+A: 因为 Steam API 返回的是用户在**最近两周内实际玩过的游戏**。如果用户最近两周只玩了 3 个游戏，即使配置 `RECENTLY_PLAYED_COUNT=10`，API 也只会返回这 3 个游戏。可以通过 `games.recentCount` 字段查看实际的最近游戏总数。
 
 **Q: 图片加载失败怎么办？**
 

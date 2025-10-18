@@ -101,23 +101,40 @@ export async function handleSteamUserRequest(
     // 4. 获取最近游戏
     Logger.log('Fetching recently played games...');
     const gamesConfig = getGamesConfig();
-    const recentlyPlayed = await steamApi.getRecentlyPlayedGames(
+    const recentlyPlayedResult = await steamApi.getRecentlyPlayedGames(
       steamUserId,
       gamesConfig.recentlyPlayedCount
     );
+    const recentlyPlayed = recentlyPlayedResult.games;
+    const recentlyPlayedTotalCount = recentlyPlayedResult.totalCount;
 
     // 5. 获取最近游戏的详细信息
     const topRecentAppIds = recentlyPlayed.map(g => g.appid);
     const gameDetailsMap = await steamApi.getGameDetails(topRecentAppIds);
 
-    // 6. 获取成就信息（对最近游戏的前 10 个）
+    // 6. 获取成就信息（对最近游戏的所有游戏 + 游戏库的前50个游戏）
     Logger.log('Fetching achievements...');
     const achievementsDataMap: Record<
       number,
       Awaited<ReturnType<typeof steamApi.getPlayerAchievements>>
     > = {};
 
+    // 获取最近游戏的成就
     for (const appId of topRecentAppIds) {
+      try {
+        achievementsDataMap[appId] = await steamApi.getPlayerAchievements(steamUserId, appId);
+      } catch (error) {
+        Logger.warn(`Failed to fetch achievements for app ${appId}`);
+      }
+    }
+
+    // 获取游戏库中前50个游戏的成就
+    const allGamesAppIds = allGames.slice(0, 50).map(g => g.appid);
+    for (const appId of allGamesAppIds) {
+      // 如果已经获取过（在最近游戏中），跳过
+      if (achievementsDataMap[appId]) {
+        continue;
+      }
       try {
         achievementsDataMap[appId] = await steamApi.getPlayerAchievements(steamUserId, appId);
       } catch (error) {
@@ -165,16 +182,29 @@ export async function handleSteamUserRequest(
       };
     });
 
-    const allGamesList = allGames.slice(0, 100).map(game => ({
-      appid: game.appid,
-      name: game.name,
-      playtimeForever: Math.floor((game.playtime_forever || 0) / 60),
-      playtimeTwoWeeks: Math.floor((game.playtime_2weeks || 0) / 60),
-      images: {
-        icon: ImageBuilder.gameIcon(game.appid, game.img_icon_url),
-        headerImage: ImageBuilder.gameHeader(game.appid),
-      },
-    }));
+    const allGamesList = allGames.slice(0, 100).map(game => {
+      // 获取该游戏的成就统计
+      const achData = achievementsDataMap[game.appid];
+      const achievements = achData && achData.playerAchievements.length > 0
+        ? {
+            total: achData.playerAchievements.length,
+            unlocked: achData.playerAchievements.filter(a => a.achieved === 1).length,
+            percentage: Math.round((achData.playerAchievements.filter(a => a.achieved === 1).length / achData.playerAchievements.length) * 100),
+          }
+        : undefined;
+
+      return {
+        appid: game.appid,
+        name: game.name,
+        playtimeForever: Math.floor((game.playtime_forever || 0) / 60),
+        playtimeTwoWeeks: Math.floor((game.playtime_2weeks || 0) / 60),
+        images: {
+          icon: ImageBuilder.gameIcon(game.appid, game.img_icon_url),
+          headerImage: ImageBuilder.gameHeader(game.appid),
+        },
+        achievements,
+      };
+    });
 
     // 计算总游玩时长统计
     const totalPlaytimeForever = Math.floor(
@@ -184,13 +214,16 @@ export async function handleSteamUserRequest(
       allGames.reduce((sum, game) => sum + (game.playtime_2weeks || 0), 0) / 60
     );
 
-    // 获取所有游戏的成就总数
+    // 获取所有游戏的成就总数（包括最近游戏和游戏库中的游戏）
     let totalAllAchievements = 0;
     let unlockedAllAchievements = 0;
 
     const achievementsByGame = [];
     
-    for (const appId of topRecentAppIds) {
+    // 构建成就数据（包括最近游戏和游戏库前50个游戏）
+    const allAchievementAppIds = Array.from(new Set([...topRecentAppIds, ...allGamesAppIds]));
+    
+    for (const appId of allAchievementAppIds) {
       const achData = achievementsDataMap[appId];
       if (achData && achData.playerAchievements.length > 0) {
         const schemaMap: Record<string, typeof achData.achievements[0]> = {};
@@ -220,9 +253,15 @@ export async function handleSteamUserRequest(
           };
         });
 
+        // 查找游戏名称（可能在最近游戏中，也可能在所有游戏中）
+        const gameName =
+          recentlyPlayed.find(g => g.appid === appId)?.name ||
+          allGames.find(g => g.appid === appId)?.name ||
+          '';
+
         achievementsByGame.push({
           appid: appId,
-          gameName: recentlyPlayed.find(g => g.appid === appId)?.name || '',
+          gameName,
           total: achData.playerAchievements.length,
           unlocked: unlockedCount,
           percentage: Math.round((unlockedCount / achData.playerAchievements.length) * 100),
@@ -256,7 +295,7 @@ export async function handleSteamUserRequest(
       },
       games: {
         totalCount: allGames.length,
-        recentCount: recentlyPlayed.length,
+        recentCount: recentlyPlayedTotalCount, // 使用 Steam API 返回的总数
         recentGames,
         allGames: allGamesList,
       },

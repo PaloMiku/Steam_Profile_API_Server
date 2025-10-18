@@ -248,6 +248,11 @@ export interface AllGame {
     icon: string;
     headerImage: string;
   };
+  achievements?: {
+    total: number;
+    unlocked: number;
+    percentage: number;
+  };
 }
 
 export interface GamesData {

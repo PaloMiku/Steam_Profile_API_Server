@@ -145,7 +145,10 @@ export class SteamApi {
   /**
    * 获取最近游玩的游戏
    */
-  async getRecentlyPlayedGames(steamId: string, count: number = 10): Promise<SteamGame[]> {
+  async getRecentlyPlayedGames(
+    steamId: string,
+    count: number = 10
+  ): Promise<{ totalCount: number; games: SteamGame[] }> {
     try {
       const url = new URL(
         `${STEAM_API_BASE}/IPlayerService/GetRecentlyPlayedGames/v0001/`
@@ -161,7 +164,10 @@ export class SteamApi {
       }
 
       const data = await response.json() as any;
-      return data.response.games || [];
+      return {
+        totalCount: data.response.total_count || 0,
+        games: data.response.games || [],
+      };
     } catch (error) {
       throw new Error(`Failed to fetch recently played games: ${error}`);
     }
