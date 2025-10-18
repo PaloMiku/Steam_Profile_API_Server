@@ -1,10 +1,5 @@
 {
   "buildCommand": "npm run build",
-  "functions": {
-    "api/**/*.ts": {
-    }
-  },
-  "regions": ["icn1"],
   "env": {
     "STEAM_API_KEY": "",
     "STEAM_USER_ID": "",
