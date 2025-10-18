@@ -103,6 +103,10 @@ Accept: application/json
     "currentGame": {                          // 可选：当前在玩的游戏
       "appid": 570,
       "name": "Dota 2"
+    },
+    "playtimeStats": {                        // 用户游玩时长统计
+      "totalForever": 1200,                   // 总游玩时长（小时）
+      "totalTwoWeeks": 50                     // 最近两周总游玩时长（小时）
     }
   }
 }
@@ -121,6 +125,8 @@ Accept: application/json
 | `status` | enum | 当前在线状态 |
 | `statusMessage` | string | 状态文本描述 |
 | `currentGame` | object? | 正在玩的游戏（如果在游戏中） |
+| `playtimeStats.totalForever` | number | 所有游戏总游玩时长（小时） |
+| `playtimeStats.totalTwoWeeks` | number | 最近两周所有游戏总游玩时长（小时） |
 
 **状态值映射：**
 
@@ -148,8 +154,8 @@ Accept: application/json
       {
         "appid": 570,
         "name": "Dota 2",
-        "playtimeForever": 3600,              // 总游玩时长（分钟）
-        "playtimeTwoWeeks": 120,              // 两周内游玩时长（分钟）
+        "playtimeForever": 3600,              // 总游玩时长（小时）
+        "playtimeTwoWeeks": 120,              // 两周内游玩时长（小时）
         "price": {
           "amount": 0,                        // 价格（美分）
           "currency": "USD",
@@ -170,7 +176,8 @@ Accept: application/json
       {
         "appid": 570,
         "name": "Dota 2",
-        "playtimeForever": 3600,
+        "playtimeForever": 3600,              // 总游玩时长（分钟）
+        "playtimeTwoWeeks": 120,              // 两周内游玩时长（分钟）
         "images": {
           "icon": "https://media.steampowered.com/steamcommunity/public/images/apps/570/..._icon.jpg",
           "headerImage": "https://cdn.cloudflare.steamstatic.com/steam/apps/570/header.jpg"
@@ -203,6 +210,17 @@ Accept: application/json
 | `images.*` | string | 游戏相关图片的 Steam CDN URL |
 | `releaseDate` | string | 发布日期（YYYY-MM-DD） |
 | `shortDescription` | string | 游戏简介 |
+
+**AllGame 字段：**
+
+| 字段 | 类型 | 说明 |
+|-----|-----|------|
+| `appid` | number | Steam 应用 ID |
+| `name` | string | 游戏名称 |
+| `playtimeForever` | number | 总游玩时长（分钟） |
+| `playtimeTwoWeeks` | number | 近两周游玩时长（分钟） |
+| `images.icon` | string | 游戏小图标 (32x32) |
+| `images.headerImage` | string | 游戏列表头图 (460x215) |
 
 **图片 URL 说明：**
 

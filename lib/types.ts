@@ -238,6 +238,7 @@ export interface AllGame {
   appid: number;
   name: string;
   playtimeForever: number;
+  playtimeTwoWeeks: number;
   images: {
     icon: string;
     headerImage: string;
@@ -285,6 +286,10 @@ export interface UserInfo {
   status: 'online' | 'offline' | 'away' | 'snooze' | 'busy' | 'trading' | 'playing';
   statusMessage: string;
   currentGame?: CurrentGame;
+  playtimeStats: {
+    totalForever: number; // 总游玩时长（小时）
+    totalTwoWeeks: number; // 最近两周总游玩时长（小时）
+  };
 }
 
 export interface ResponseData {

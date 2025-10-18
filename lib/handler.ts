@@ -145,11 +145,20 @@ export async function handleSteamUserRequest(
       appid: game.appid,
       name: game.name,
       playtimeForever: Math.floor((game.playtime_forever || 0) / 60),
+      playtimeTwoWeeks: Math.floor((game.playtime_2weeks || 0) / 60),
       images: {
         icon: ImageBuilder.gameIcon(game.appid, game.img_icon_url),
         headerImage: ImageBuilder.gameHeader(game.appid),
       },
     }));
+
+    // 计算总游玩时长统计
+    const totalPlaytimeForever = Math.floor(
+      allGames.reduce((sum, game) => sum + (game.playtime_forever || 0), 0) / 60
+    );
+    const totalPlaytimeTwoWeeks = Math.floor(
+      allGames.reduce((sum, game) => sum + (game.playtime_2weeks || 0), 0) / 60
+    );
 
     // 获取所有游戏的成就总数
     let totalAllAchievements = 0;
@@ -215,6 +224,10 @@ export async function handleSteamUserRequest(
               name: playerInfo.gameextrainfo,
             }
           : undefined,
+        playtimeStats: {
+          totalForever: totalPlaytimeForever,
+          totalTwoWeeks: totalPlaytimeTwoWeeks,
+        },
       },
       games: {
         totalCount: allGames.length,

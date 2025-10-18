@@ -110,7 +110,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 // Start server
 if (import.meta.url === `file://${process.argv[1]}`) {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.clear();
     console.log('\n');
     console.log('  ╔═══════════════════════════════════════════════╗');
@@ -123,6 +123,37 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log(`  ✓ API endpoint:      \x1b[36mhttp://localhost:${PORT}/api/steam-user\x1b[0m`);
     console.log(`  ✓ Health check:      \x1b[36mhttp://localhost:${PORT}/health\x1b[0m`);
     console.log('\n');
+  });
+
+  // 关闭处理
+  const gracefulShutdown = (signal: string) => {
+    console.log(`\n📍 收到 ${signal} 信号，正在关闭服务器...\n`);
+    
+    server.close(() => {
+      console.log('✓ 服务器已关闭');
+      process.exit(0);
+    });
+
+    // 如果 10 秒后还没关闭，强制退出
+    setTimeout(() => {
+      console.error('✗ 强制关闭服务器');
+      process.exit(1);
+    }, 10000);
+  };
+
+  // 监听终止信号
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+  // 捕获未处理的异常
+  process.on('uncaughtException', (error) => {
+    console.error('✗ 未处理的异常:', error);
+    process.exit(1);
+  });
+
+  // 捕获未处理的 Promise 拒绝
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('✗ 未处理的 Promise 拒绝:', reason);
   });
 }
 
