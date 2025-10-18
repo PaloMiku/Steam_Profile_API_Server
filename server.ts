@@ -7,6 +7,8 @@ import {
   validateEnvironment,
   getCacheTTL,
   handleSteamUserRequest,
+  handleSteamGamesRequest,
+  handleSteamAchievementsRequest,
 } from './lib/handler.js';
 import type { SuccessResponse, ErrorResponse } from './lib/types.js';
 import type { Express } from 'express';
@@ -88,7 +90,97 @@ app.get('/api/steam-user', async (req, res) => {
   }
 });
 
-// 404 handler
+// Games API endpoint
+app.get('/api/steam-games', async (req, res) => {
+  const envCheck = validateEnvironment();
+  if (!envCheck.valid) {
+    Logger.error('Environment validation failed', envCheck.error);
+    const errorResponse: ErrorResponse = {
+      success: false,
+      error: envCheck.error || 'Environment error',
+      code: 'ENV_ERROR',
+    };
+    return res.status(500).json(errorResponse);
+  }
+
+  try {
+    const steamApiKey = process.env.STEAM_API_KEY!;
+    const steamUserId = process.env.STEAM_USER_ID!;
+    const ttl = getCacheTTL();
+
+    const steamApi = new SteamApi(steamApiKey);
+    const startTime = Date.now();
+
+    const data = await handleSteamGamesRequest(steamUserId, steamApi, ttl);
+
+    const successResponse: SuccessResponse = {
+      success: true,
+      data: data as any,
+      metadata: {
+        cached: true,
+        cachedAt: new Date().toISOString(),
+        cacheExpiry: new Date(Date.now() + ttl.games).toISOString(),
+        fetchDuration: `${Date.now() - startTime}ms`,
+      },
+    };
+
+    res.status(200).json(successResponse);
+  } catch (error) {
+    Logger.error('API error', error);
+    const errorResponse: ErrorResponse = {
+      success: false,
+      error: 'Failed to fetch Steam games data',
+      code: 'STEAM_API_ERROR',
+    };
+    res.status(500).json(errorResponse);
+  }
+});
+
+// Achievements API endpoint
+app.get('/api/steam-achievements', async (req, res) => {
+  const envCheck = validateEnvironment();
+  if (!envCheck.valid) {
+    Logger.error('Environment validation failed', envCheck.error);
+    const errorResponse: ErrorResponse = {
+      success: false,
+      error: envCheck.error || 'Environment error',
+      code: 'ENV_ERROR',
+    };
+    return res.status(500).json(errorResponse);
+  }
+
+  try {
+    const steamApiKey = process.env.STEAM_API_KEY!;
+    const steamUserId = process.env.STEAM_USER_ID!;
+    const ttl = getCacheTTL();
+
+    const steamApi = new SteamApi(steamApiKey);
+    const startTime = Date.now();
+
+    const data = await handleSteamAchievementsRequest(steamUserId, steamApi, ttl);
+
+    const successResponse: SuccessResponse = {
+      success: true,
+      data: data as any,
+      metadata: {
+        cached: true,
+        cachedAt: new Date().toISOString(),
+        cacheExpiry: new Date(Date.now() + ttl.achievements).toISOString(),
+        fetchDuration: `${Date.now() - startTime}ms`,
+      },
+    };
+
+    res.status(200).json(successResponse);
+  } catch (error) {
+    Logger.error('API error', error);
+    const errorResponse: ErrorResponse = {
+      success: false,
+      error: 'Failed to fetch Steam achievements data',
+      code: 'STEAM_API_ERROR',
+    };
+    res.status(500).json(errorResponse);
+  }
+});
 app.use((req, res) => {
   const errorResponse: ErrorResponse = {
     success: false,
