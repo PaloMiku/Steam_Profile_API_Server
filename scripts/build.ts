@@ -15,7 +15,7 @@ const projectRoot = path.resolve(__dirname, '..');
 function detectPlatform(): { platform: string; detectedBy: string } {
   // 检查显式的 DEPLOY_TARGET 环境变量
   if (process.env.DEPLOY_TARGET) {
-    const validTargets = ['vercel', 'netlify', 'cloudflare', 'local'];
+  const validTargets = ['vercel', 'netlify', 'local'];
     const target = process.env.DEPLOY_TARGET.toLowerCase();
     if (validTargets.includes(target)) {
       return { platform: target, detectedBy: 'DEPLOY_TARGET env variable' };
@@ -25,9 +25,7 @@ function detectPlatform(): { platform: string; detectedBy: string } {
   // 检查平台特定的环境变量
   if (process.env.VERCEL) return { platform: 'vercel', detectedBy: 'VERCEL env variable' };
   if (process.env.NETLIFY) return { platform: 'netlify', detectedBy: 'NETLIFY env variable' };
-  if (process.env.CF_PAGES || process.env.CLOUDFLARE_WORKER) {
-    return { platform: 'cloudflare', detectedBy: 'Cloudflare env variable' };
-  }
+  // Cloudflare Worker 支持已移除
 
   // 默认本地
   return { platform: 'local', detectedBy: 'default' };
@@ -38,7 +36,7 @@ function generateEntryPoints(platform: string): void {
   const emojiMap: Record<string, string> = {
     vercel: '⚡',
     netlify: '🌐',
-    cloudflare: '☁️',
+  // cloudflare: '☁️',
     local: '🖥️',
   };
   const emoji = emojiMap[platform] || '🔨';
@@ -52,9 +50,9 @@ function generateEntryPoints(platform: string): void {
     case 'netlify':
       generateNetlifyEntry();
       break;
-    case 'cloudflare':
-      generateCloudflareEntry();
-      break;
+    // case 'cloudflare':
+    //   generateCloudflareEntry();
+    //   break;
     case 'local':
       generateLocalEntry();
       break;
@@ -86,11 +84,6 @@ function copyApiFilesToNetlify(): void {
   // Removed - Netlify functions are now manually maintained
 }
 
-function generateCloudflareEntry(): void {
-  // Cloudflare Workers 使用 src/index.ts
-  // src/index.ts 已经存在，无需生成
-  console.log('✓ Cloudflare: Using ./src/index.ts');
-}
 
 function generateLocalEntry(): void {
   // 本地使用 server.ts 作为入口
@@ -112,10 +105,6 @@ function updateTsConfig(platform: string): void {
     case 'netlify':
       tsConfig.include = ['netlify/**/*.ts', 'lib/**/*.ts'];
       tsConfig.exclude = ['node_modules', 'dist', 'api', 'src', 'server.ts'];
-      break;
-    case 'cloudflare':
-      tsConfig.include = ['src/**/*.ts', 'lib/**/*.ts'];
-      tsConfig.exclude = ['node_modules', 'dist', 'api', 'netlify', 'server.ts'];
       break;
     case 'local':
       tsConfig.include = ['server.ts', 'lib/**/*.ts'];
@@ -166,7 +155,7 @@ function main(): void {
     console.log('💡 Available environment variables:');
     console.log('   DEPLOY_TARGET=vercel    - Build for Vercel');
     console.log('   DEPLOY_TARGET=netlify   - Build for Netlify');
-    console.log('   DEPLOY_TARGET=cloudflare - Build for Cloudflare');
+  // console.log('   DEPLOY_TARGET=cloudflare - Build for Cloudflare');
     console.log('   DEPLOY_TARGET=local     - Build for local (default)');
     console.log('═'.repeat(50) + '\n');
   } catch (error) {

@@ -43,15 +43,6 @@
 4. 配置构建命令: npm run build
 5. 发布目录: dist
 
-#### Cloudflare Workers
-
-```bash
-npm install -g wrangler
-wrangler login
-DEPLOY_TARGET=cloudflare npm run build
-npm run start
-```
-
 #### 本地部署
 
 ```bash

@@ -12,14 +12,13 @@
     "test": "node --test dist/**/*.test.js"
   },
   "keywords": [
-    "steam",
-    "api",
-    "vercel",
-    "netlify",
-    "cloudflare-worker",
-    "serverless",
-    "games",
-    "achievements"
+  "steam",
+  "api",
+  "vercel",
+  "netlify",
+  "serverless",
+  "games",
+  "achievements"
   ],
   "author": "",
   "license": "MIT",
