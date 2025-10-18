@@ -1,4 +1,5 @@
 import express from 'express';
+import { Server as HTTPServer } from 'http';
 import 'dotenv/config.js';
 import { SteamApi } from './lib/steam-api.js';
 import { Logger } from './lib/utils.js';
@@ -125,20 +126,50 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log('\n');
   });
 
+  // 追踪活动连接
+  const activeConnections = new Set<any>();
+
+  server.on('connection', (socket: any) => {
+    activeConnections.add(socket);
+    socket.on('close', () => {
+      activeConnections.delete(socket);
+    });
+  });
+
   // 关闭处理
+  let isShuttingDown = false;
+
   const gracefulShutdown = (signal: string) => {
+    if (isShuttingDown) {
+      Logger.warn('Shutdown already in progress, ignoring signal');
+      return;
+    }
+
+    isShuttingDown = true;
     console.log(`\n📍 收到 ${signal} 信号，正在关闭服务器...\n`);
-    
+
+    // 停止接收新连接
     server.close(() => {
       console.log('✓ 服务器已关闭');
       process.exit(0);
     });
 
+    // 销毁所有活动连接
+    activeConnections.forEach((socket) => {
+      socket.destroy();
+    });
+    activeConnections.clear();
+
     // 如果 10 秒后还没关闭，强制退出
-    setTimeout(() => {
-      console.error('✗ 强制关闭服务器');
+    const forceExitTimer = setTimeout(() => {
+      console.error('✗ 强制关闭服务器（超时）');
       process.exit(1);
     }, 10000);
+
+    // 如果正常关闭，清除强制退出定时器
+    server.once('close', () => {
+      clearTimeout(forceExitTimer);
+    });
   };
 
   // 监听终止信号
@@ -147,13 +178,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
   // 捕获未处理的异常
   process.on('uncaughtException', (error) => {
-    console.error('✗ 未处理的异常:', error);
+    Logger.error('未处理的异常', error);
     process.exit(1);
   });
 
   // 捕获未处理的 Promise 拒绝
   process.on('unhandledRejection', (reason, promise) => {
-    console.error('✗ 未处理的 Promise 拒绝:', reason);
+    Logger.error('未处理的 Promise 拒绝', reason);
   });
 }
 
