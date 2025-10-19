@@ -134,14 +134,14 @@ export const ImageBuilder = {
    * 用户头像小
    */
   userAvatarSmall(avatarHash: string): string {
-    return `https://avatars.steamstatic.com/${avatarHash}_32bf.jpg`;
+    return `https://avatars.steamstatic.com/${avatarHash}_small.jpg`;
   },
 
   /**
    * 用户头像中
    */
   userAvatarMedium(avatarHash: string): string {
-    return `https://avatars.steamstatic.com/${avatarHash}_64bf.jpg`;
+    return `https://avatars.steamstatic.com/${avatarHash}_medium.jpg`;
   },
 
   /**
