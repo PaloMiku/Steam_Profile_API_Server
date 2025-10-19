@@ -8,9 +8,10 @@
     "prebuild": "tsx scripts/build.ts",
     "build": "tsc",
     "build:platforms": "npm run build",
-    "dev": "tsx watch server.ts",
+  "dev": "tsx watch server.ts",
     "start": "node dist/server.js",
-    "test": "node --test dist/**/*.test.js"
+    "test": "node --test dist/**/*.test.js",
+    "postbuild": "node -e \"if(process.env.NETLIFY) require('./scripts/cleanup-functions.js')\""
   },
   "keywords": [
   "steam",

@@ -19,13 +19,13 @@
     "moduleResolution": "node"
   },
   "include": [
-    "api/**/*.ts",
     "netlify/**/*.ts",
     "lib/**/*.ts"
   ],
   "exclude": [
     "node_modules",
     "dist",
+    "api",
     "src",
     "server.ts"
   ]
