@@ -69,7 +69,6 @@ npm start
 ```bash
 DEPLOY_TARGET=netlify npm run build:platforms
 ```
-```
 
 ## API 文档
 
