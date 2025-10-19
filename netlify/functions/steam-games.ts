@@ -5,11 +5,7 @@
 
 import { SteamApi } from '../../lib/steam-api.js';
 import { Logger } from '../../lib/utils.js';
-import {
-  validateEnvironment,
-  getCacheTTL,
-  handleSteamGamesRequest,
-} from '../../lib/handler.js';
+import { validateEnvironment, getCacheTTL, handleSteamGamesRequest } from '../../lib/handler.js';
 import type { SuccessResponse, ErrorResponse } from '../../lib/types.js';
 import {
   getCorsHeaders,

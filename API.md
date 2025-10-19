@@ -11,20 +11,6 @@ Steam Profile API 是一个 RESTful API，用于获取配置用户的 Steam 个�
 - **CORS**: 已启用（允许所有来源）
 - **缓存**: 默认启用，可通过环境变量配置
 
-### 端点
-
-| 环境 | 端点 |
-|-----|------|
-| 本地 | `http://localhost:4000/api/steam-user` |
-| 本地 | `http://localhost:4000/api/steam-games` |
-| 本地 | `http://localhost:4000/api/steam-achievements` |
-| Vercel | `https://<your-project>.vercel.app/api/steam-user` |
-| Vercel | `https://<your-project>.vercel.app/api/steam-games` |
-| Vercel | `https://<your-project>.vercel.app/api/steam-achievements` |
-| Netlify | `https://<your-site>.netlify.app/api/steam-user` |
-| Netlify | `https://<your-site>.netlify.app/api/steam-games` |
-| Netlify | `https://<your-site>.netlify.app/api/steam-achievements` |
-
 ### 端点说明
 
 | 端点 | 用途 | 返回数据 | 缓存时长 |

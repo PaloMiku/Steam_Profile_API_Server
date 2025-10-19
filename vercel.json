@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build:platforms",
   "env": {
     "STEAM_API_KEY": "",
     "STEAM_USER_ID": "",

@@ -15,7 +15,7 @@ const projectRoot = path.resolve(__dirname, '..');
 function detectPlatform(): { platform: string; detectedBy: string } {
   // 检查显式的 DEPLOY_TARGET 环境变量
   if (process.env.DEPLOY_TARGET) {
-  const validTargets = ['vercel', 'netlify', 'local'];
+  const validTargets = ['vercel', 'netlify', 'local', 'all'];
     const target = process.env.DEPLOY_TARGET.toLowerCase();
     if (validTargets.includes(target)) {
       return { platform: target, detectedBy: 'DEPLOY_TARGET env variable' };
@@ -48,6 +48,10 @@ function generateEntryPoints(platform: string): void {
       generateVercelEntry();
       break;
     case 'netlify':
+      generateNetlifyEntry();
+      break;
+    case 'all':
+      generateVercelEntry();
       generateNetlifyEntry();
       break;
     // case 'cloudflare':
@@ -105,6 +109,10 @@ function updateTsConfig(platform: string): void {
     case 'netlify':
       tsConfig.include = ['netlify/**/*.ts', 'lib/**/*.ts'];
       tsConfig.exclude = ['node_modules', 'dist', 'api', 'src', 'server.ts'];
+      break;
+    case 'all':
+      tsConfig.include = ['api/**/*.ts', 'netlify/**/*.ts', 'lib/**/*.ts'];
+      tsConfig.exclude = ['node_modules', 'dist', 'src', 'server.ts'];
       break;
     case 'local':
       tsConfig.include = ['server.ts', 'lib/**/*.ts'];

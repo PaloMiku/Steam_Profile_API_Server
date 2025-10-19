@@ -40,7 +40,7 @@
 1. Fork 本仓库
 2. 连接到 Netlify
 3. 添加环境变量 STEAM_API_KEY 和 STEAM_USER_ID
-4. 配置构建命令: npm run build
+4. 配置构建命令: npm run build:platforms
 5. 发布目录: dist
 
 #### 本地部署
@@ -61,8 +61,14 @@ cp .env.example .env.local
 npm run dev
 
 # 或者生产运行
-npm run build
+npm run build:platforms
 npm start
+
+可选：你可以通过设置 DEPLOY_TARGET 环境变量来指定构建目标（vercel|netlify|local|all）。例如：
+
+```bash
+DEPLOY_TARGET=netlify npm run build:platforms
+```
 ```
 
 ## API 文档
