@@ -575,7 +575,42 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 
 ---
 
-## 配置选项
+
+## 🌏 语言与地区设置
+
+### 语言设置（本地化文本）
+
+API 返回的游戏信息、描述、价格等均可本地化。**语言由环境变量控制**，不再通过 URL 查询参数设置。
+
+- **STEAM_LANGUAGE** 或 **STEAM_LANG**：指定 Steam 商店 API 返回的语言。
+  - 支持的常用值：
+    - `schinese`（简体中文，默认）
+    - `english`（英文）
+    - `japanese`（日文）
+    - `tchinese`（繁体中文）
+    - `german`、`french`、`spanish`、`russian` 等
+  - 例如：
+    ```bash
+    STEAM_LANGUAGE=english npm start
+    # 或
+    STEAM_LANGUAGE=schinese npm run dev
+    ```
+  - 未设置时，默认返回简体中文（schinese）。
+
+### 地区设置（价格/货币）
+
+Steam 商店价格、货币等信息由 `cc` 查询参数控制：
+
+- `cc`：国家/地区代码（如 `cn`, `us`, `jp`, `de` 等），影响价格、货币符号等。
+  - 例如：
+    - `/api/steam-games?cc=us` 返回美元价格
+    - `/api/steam-games?cc=jp` 返回日元价格
+    - `/api/steam-games?cc=cn` 返回人民币价格
+
+**注意：**
+- 语言和地区可以独立设置。例如：你可以用 `STEAM_LANGUAGE=english` 并请求 `/api/steam-games?cc=cn`，这样会返回中文区的价格但所有文本为英文。
+- 语言环境变量优先级高于任何请求参数，API 不再支持通过 `lang` 查询参数切换语言。
+
 
 ### 最近游戏配置
 

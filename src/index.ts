@@ -91,7 +91,9 @@ export default {
       process.env.CACHE_TTL_ACHIEVEMENTS_HOURS = env.CACHE_TTL_ACHIEVEMENTS_HOURS || '1';
 
       const ttl = getCacheTTL();
-      const steamApi = new SteamApi(steamApiKey);
+  const urlObj = new URL(request.url);
+  const countryCode = urlObj.searchParams.get('cc') || undefined;
+  const steamApi = new SteamApi(steamApiKey, countryCode);
       const startTime = Date.now();
 
       const data = await handleSteamUserRequest(steamUserId, steamApi, ttl);

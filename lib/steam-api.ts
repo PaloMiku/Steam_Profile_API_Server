@@ -15,14 +15,24 @@ const STEAM_STORE_API_BASE = 'https://store.steampowered.com/api';
 export class SteamApi {
   private apiKey: string;
   private countryCode: string = 'cn';
+  // 默认语言改为简体中文
+  private language: string = 'schinese';
 
-  constructor(apiKey: string, countryCode?: string) {
+  constructor(apiKey: string, countryCode?: string, language?: string) {
     if (!apiKey) {
       throw new Error('Steam API Key is required');
     }
     this.apiKey = apiKey;
     if (countryCode) {
       this.countryCode = countryCode.toLowerCase();
+    }
+
+    // 优先使用环境变量 STEAM_LANGUAGE（如果存在），否则使用构造参数 language
+    const envLang = process.env.STEAM_LANGUAGE || process.env.STEAM_LANG;
+    if (envLang) {
+      this.language = this.mapLanguage(envLang);
+    } else if (language) {
+      this.language = this.mapLanguage(language);
     }
   }
 
@@ -32,6 +42,18 @@ export class SteamApi {
    */
   setCountryCode(countryCode: string): void {
     this.countryCode = countryCode.toLowerCase();
+  }
+
+  /**
+   * 
+   * @param language language code or name (e.g. 'en', 'english', 'schinese', 'zh-CN')
+   */
+  setLanguage(language: string): void {
+    this.language = this.mapLanguage(language);
+  }
+
+  getLanguage(): string {
+    return this.language;
   }
 
   /**
@@ -94,6 +116,45 @@ export class SteamApi {
     };
 
     return currencyMap[countryCode.toLowerCase()] || 'USD';
+  }
+
+  /**
+   * Map common language identifiers to Steam store language parameter
+   */
+  private mapLanguage(lang: string): string {
+    if (!lang) return 'english';
+    const key = lang.toLowerCase();
+    const map: Record<string, string> = {
+      en: 'english',
+      eng: 'english',
+      english: 'english',
+      zh: 'schinese',
+      'zh-cn': 'schinese',
+      'zh_tw': 'tchinese',
+      'zh-tw': 'tchinese',
+      'zh-hk': 'tchinese',
+      schinese: 'schinese',
+      tchinese: 'tchinese',
+      ja: 'japanese',
+      jp: 'japanese',
+      japanese: 'japanese',
+      de: 'german',
+      german: 'german',
+      fr: 'french',
+      french: 'french',
+      es: 'spanish',
+      spanish: 'spanish',
+      ru: 'russian',
+      russian: 'russian',
+      ko: 'koreana',
+      korean: 'koreana',
+      'pt-br': 'brazilian',
+      pt: 'brazilian',
+      pl: 'polish',
+      polish: 'polish',
+    };
+
+    return map[key] || key;
   }
 
   /**
@@ -248,7 +309,7 @@ export class SteamApi {
           const url = new URL(`${STEAM_STORE_API_BASE}/appdetails`);
           url.searchParams.set('appids', String(appId));
           url.searchParams.set('cc', this.countryCode);
-          url.searchParams.set('l', 'english');
+          url.searchParams.set('l', this.language);
 
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 5000);

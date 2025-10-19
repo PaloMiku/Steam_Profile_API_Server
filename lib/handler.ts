@@ -423,8 +423,8 @@ export async function handleSteamAchievementsRequest(
  * For Vercel/Netlify/Cloudflare the adapters will call this with the appropriate wrappers
  */
 export function createPlatformHandler(handlerFn: (steamApi: any, ttl: any, steamUserId: string) => Promise<any>) {
-  return async function platformHandler(context: { steamApiKey?: string; steamUserId?: string; env?: any }) {
-    const { steamApiKey, steamUserId, env } = context;
+  return async function platformHandler(context: { steamApiKey?: string; steamUserId?: string; countryCode?: string; language?: string; env?: any }) {
+    const { steamApiKey, steamUserId, countryCode, language, env } = context;
 
     const envKey = steamApiKey || process.env.STEAM_API_KEY;
     const userId = steamUserId || process.env.STEAM_USER_ID;
@@ -433,7 +433,7 @@ export function createPlatformHandler(handlerFn: (steamApi: any, ttl: any, steam
       throw new Error('Missing environment variables');
     }
 
-    const steamApi = new SteamApi(envKey as string);
+    const steamApi = new SteamApi(envKey as string, countryCode as string | undefined, language as string | undefined);
     const ttl = getCacheTTL();
     return await handlerFn(steamApi, ttl, userId as string);
   };

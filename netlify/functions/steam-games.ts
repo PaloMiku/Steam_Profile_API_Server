@@ -56,7 +56,10 @@ export default async (req: Request): Promise<Response> => {
     const steamUserId = process.env.STEAM_USER_ID!;
     const ttl = getCacheTTL();
 
-    const steamApi = new SteamApi(steamApiKey);
+  // read optional cc/lang from query string
+  const url = new URL(req.url);
+  const countryCode = url.searchParams.get('cc') || undefined;
+  const steamApi = new SteamApi(steamApiKey, countryCode || undefined);
     const startTime = Date.now();
 
     const data = await handleSteamGamesRequest(steamUserId, steamApi, ttl);

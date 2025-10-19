@@ -62,7 +62,8 @@ app.get('/api/steam-user', async (req, res) => {
     const steamUserId = process.env.STEAM_USER_ID!;
     const ttl = getCacheTTL();
 
-    const steamApi = new SteamApi(steamApiKey);
+  const countryCode = (req.query.cc as string) || undefined;
+  const steamApi = new SteamApi(steamApiKey, countryCode);
     const startTime = Date.now();
 
     const data = await handleSteamUserRequest(steamUserId, steamApi, ttl);
@@ -108,7 +109,8 @@ app.get('/api/steam-games', async (req, res) => {
     const steamUserId = process.env.STEAM_USER_ID!;
     const ttl = getCacheTTL();
 
-    const steamApi = new SteamApi(steamApiKey);
+  const countryCode = (req.query.cc as string) || undefined;
+  const steamApi = new SteamApi(steamApiKey, countryCode);
     const startTime = Date.now();
 
     const data = await handleSteamGamesRequest(steamUserId, steamApi, ttl);
@@ -154,7 +156,8 @@ app.get('/api/steam-achievements', async (req, res) => {
     const steamUserId = process.env.STEAM_USER_ID!;
     const ttl = getCacheTTL();
 
-    const steamApi = new SteamApi(steamApiKey);
+  const countryCode = (req.query.cc as string) || undefined;
+  const steamApi = new SteamApi(steamApiKey, countryCode);
     const startTime = Date.now();
 
     const data = await handleSteamAchievementsRequest(steamUserId, steamApi, ttl);

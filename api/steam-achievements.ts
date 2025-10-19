@@ -72,7 +72,8 @@ export default async (request: VercelRequest, response: VercelResponse): Promise
     const steamUserId = process.env.STEAM_USER_ID!;
     const ttl = getCacheTTL();
 
-    const steamApi = new SteamApi(steamApiKey);
+  const countryCode = (request.query.cc as string) || undefined;
+  const steamApi = new SteamApi(steamApiKey, countryCode);
     const startTime = Date.now();
 
     const data = await handleSteamAchievementsRequest(steamUserId, steamApi, ttl);
