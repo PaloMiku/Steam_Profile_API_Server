@@ -11,6 +11,7 @@ import {
   validateEnvironment,
   getCacheTTL,
   handleSteamGamesRequest,
+  clearGamesCache,
 } from '../lib/handler.js';
 import type { SuccessResponse, ErrorResponse } from '../lib/types.js';
 
@@ -72,12 +73,33 @@ export default async (request: VercelRequest, response: VercelResponse): Promise
     const steamUserId = process.env.STEAM_USER_ID!;
     const ttl = getCacheTTL();
 
-  // allow optional country (cc) and language (lang) from query
-  const countryCode = (request.query.cc as string) || undefined;
-  const steamApi = new SteamApi(steamApiKey, countryCode);
+    // allow optional country (cc) and language (lang) from query
+    const countryCode = (request.query.cc as string) || undefined;
+    const limitParam = (request.query.limit as string);
+    Logger.log(`Raw limit parameter: "${limitParam}" (type: ${typeof limitParam})`);
+    
+    let limit = parseInt(limitParam || '100', 10);
+    Logger.log(`Parsed limit: ${limit}, isNaN: ${isNaN(limit)}`);
+    
+    const clearCache = (request.query.clear_cache as string) === 'true' || (request.query.clear_cache as string) === '1';
+    
+    // 验证 limit 参数
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      Logger.log(`Invalid limit value: ${limit}, resetting to 100`);
+      limit = 100;
+    }
+    
+    // 如果需要清理缓存
+    if (clearCache) {
+      Logger.log('Clearing cache as requested');
+      clearGamesCache(steamUserId);
+    }
+    
+    Logger.log(`API request: limit=${limit}, cc=${countryCode || 'default'}, clearCache=${clearCache}`);
+    const steamApi = new SteamApi(steamApiKey, countryCode);
     const startTime = Date.now();
 
-    const data = await handleSteamGamesRequest(steamUserId, steamApi, ttl);
+    const data = await handleSteamGamesRequest(steamUserId, steamApi, ttl, limit);
 
     const successResponse: SuccessResponse = {
       success: true,

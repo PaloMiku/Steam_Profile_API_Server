@@ -133,14 +133,20 @@ export async function handleSteamUserRequest(
 export async function handleSteamGamesRequest(
   steamUserId: string,
   steamApi: SteamApi,
-  ttl: ReturnType<typeof getCacheTTL>
+  ttl: ReturnType<typeof getCacheTTL>,
+  limit: number = 100
 ): Promise<GamesResponse> {
-  const cacheKey = `steam-games-${steamUserId}`;
+  // 验证 limit 参数
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    limit = 100;
+  }
+
+  const cacheKey = `steam-games-${steamUserId}-limit${limit}`;
 
   // 检查缓存
   const cached = cache.get<GamesResponse>(cacheKey);
   if (cached) {
-    Logger.debug('Using cached Steam games data');
+    Logger.debug(`Using cached Steam games data (limit=${limit})`);
     return cached;
   }
 
@@ -148,9 +154,14 @@ export async function handleSteamGamesRequest(
   const startTime = Date.now();
 
   try {
-    // 1. 获取拥有的游戏
-    Logger.log('Fetching owned games...');
-    const allGames = await steamApi.getOwnedGames(steamUserId, true);
+    // 1. 先获取一份游戏总数（不限制）
+    Logger.log('Fetching total games count...');
+    const allGamesTotal = await steamApi.getOwnedGames(steamUserId, false);
+    const totalGameCount = allGamesTotal.length;
+
+    // 2. 获取限制数量的游戏列表（已按时长排序）
+    Logger.log(`Fetching owned games (limit=${limit})...`);
+    const allGames = await steamApi.getOwnedGames(steamUserId, true, limit);
 
     // 2. 获取最近游戏
     Logger.log('Fetching recently played games...');
@@ -165,7 +176,7 @@ export async function handleSteamGamesRequest(
     const topRecentAppIds = recentlyPlayed.map(g => g.appid);
     const gameDetailsMap = await steamApi.getGameDetails(topRecentAppIds);
 
-    // 4. 获取最近游戏和前50个游戏的成就统计（仅用于显示数字，不包含详情）
+    // 4. 获取最近游戏和前 limit 个游戏的成就统计（仅用于显示数字，不包含详情）
     Logger.log('Fetching achievement statistics...');
     const achievementsDataMap: Record<
       number,
@@ -181,8 +192,8 @@ export async function handleSteamGamesRequest(
       }
     }
 
-    // 获取游戏库中前50个游戏的成就统计
-    const allGamesAppIds = allGames.slice(0, 50).map(g => g.appid);
+    // 获取已返回游戏的成就统计（已经是 limit 个了）
+    const allGamesAppIds = allGames.map(g => g.appid);
     for (const appId of allGamesAppIds) {
       if (achievementsDataMap[appId]) {
         continue;
@@ -231,8 +242,8 @@ export async function handleSteamGamesRequest(
       };
     });
 
-    // 6. 构建所有游戏列表
-    const allGamesList = allGames.slice(0, 100).map(game => {
+    // 6. 构建所有游戏列表（已按总时长排序）
+    const allGamesList = allGames.map(game => {
       const achData = achievementsDataMap[game.appid];
       const achievements = achData && achData.playerAchievements.length > 0
         ? {
@@ -257,7 +268,7 @@ export async function handleSteamGamesRequest(
 
     const gamesData: GamesResponse = {
       games: {
-        totalCount: allGames.length,
+        totalCount: totalGameCount,
         recentCount: recentlyPlayedTotalCount,
         recentGames,
         allGames: allGamesList,
@@ -268,7 +279,7 @@ export async function handleSteamGamesRequest(
     cache.set(cacheKey, gamesData, ttl.games);
 
     const duration = Date.now() - startTime;
-    Logger.log(`Successfully fetched Steam games data in ${duration}ms`);
+    Logger.log(`Successfully fetched Steam games data in ${duration}ms (limit=${limit}, returned=${allGamesList.length} games, recent=${recentGames.length})`);
 
     return gamesData;
   } catch (error) {
@@ -308,9 +319,9 @@ export async function handleSteamAchievementsRequest(
     const topRecentAppIds = recentlyPlayedResult.games.map(g => g.appid);
 
     // 2. 获取游戏库中前50个游戏的 appIds
-    Logger.log('Fetching owned games...');
-    const allGames = await steamApi.getOwnedGames(steamUserId, false); // includeAppInfo = false
-    const allGamesAppIds = allGames.slice(0, 50).map(g => g.appid);
+    Logger.log('Fetching owned games (limit=50)...');
+    const allGames = await steamApi.getOwnedGames(steamUserId, false, 50); // includeAppInfo = false, limit = 50
+    const allGamesAppIds = allGames.map(g => g.appid);
 
     // 3. 获取成就详情
     Logger.log('Fetching achievement details...');
@@ -419,8 +430,7 @@ export async function handleSteamAchievementsRequest(
 }
 
 /**
- * Create a platform-neutral handler function that accepts a platform request/response
- * For Vercel/Netlify/Cloudflare the adapters will call this with the appropriate wrappers
+ * 创建平台中立的处理器函数
  */
 export function createPlatformHandler(handlerFn: (steamApi: any, ttl: any, steamUserId: string) => Promise<any>) {
   return async function platformHandler(context: { steamApiKey?: string; steamUserId?: string; countryCode?: string; language?: string; env?: any }) {
@@ -437,4 +447,15 @@ export function createPlatformHandler(handlerFn: (steamApi: any, ttl: any, steam
     const ttl = getCacheTTL();
     return await handlerFn(steamApi, ttl, userId as string);
   };
+}
+
+/**
+ * 清理游戏数据缓存
+ */
+export function clearGamesCache(steamUserId: string): void {
+  // 清理所有不同 limit 的缓存
+  for (let limit = 1; limit <= 100; limit++) {
+    cache.delete(`steam-games-${steamUserId}-limit${limit}`);
+  }
+  Logger.log(`Cleared all games cache for user ${steamUserId}`);
 }

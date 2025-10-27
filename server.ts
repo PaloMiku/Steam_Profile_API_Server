@@ -9,6 +9,7 @@ import {
   handleSteamUserRequest,
   handleSteamGamesRequest,
   handleSteamAchievementsRequest,
+  clearGamesCache,
 } from './lib/handler.js';
 import type { SuccessResponse, ErrorResponse } from './lib/types.js';
 import type { Express } from 'express';
@@ -109,11 +110,24 @@ app.get('/api/steam-games', async (req, res) => {
     const steamUserId = process.env.STEAM_USER_ID!;
     const ttl = getCacheTTL();
 
-  const countryCode = (req.query.cc as string) || undefined;
-  const steamApi = new SteamApi(steamApiKey, countryCode);
+    const countryCode = (req.query.cc as string) || undefined;
+    const limitParam = (req.query.limit as string);
+    Logger.log(`Raw limit parameter: "${limitParam}" (type: ${typeof limitParam})`);
+    
+    let limit = parseInt(limitParam || '100', 10);
+    Logger.log(`Parsed limit: ${limit}, isNaN: ${isNaN(limit)}`);
+    
+    // 验证 limit 参数
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      Logger.log(`Invalid limit value: ${limit}, resetting to 100`);
+      limit = 100;
+    }
+    
+    Logger.log(`API request: limit=${limit}, cc=${countryCode || 'default'}`);
+    const steamApi = new SteamApi(steamApiKey, countryCode);
     const startTime = Date.now();
 
-    const data = await handleSteamGamesRequest(steamUserId, steamApi, ttl);
+    const data = await handleSteamGamesRequest(steamUserId, steamApi, ttl, limit);
 
     const successResponse: SuccessResponse = {
       success: true,

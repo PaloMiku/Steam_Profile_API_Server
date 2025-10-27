@@ -181,8 +181,11 @@ export class SteamApi {
 
   /**
    * 获取玩家拥有的游戏列表
+   * @param steamId Steam ID
+   * @param includeAppInfo 是否包含应用信息
+   * @param limit 返回游戏的最大数量（可选，不提供则返回所有）
    */
-  async getOwnedGames(steamId: string, includeAppInfo: boolean = true): Promise<SteamGame[]> {
+  async getOwnedGames(steamId: string, includeAppInfo: boolean = true, limit?: number): Promise<SteamGame[]> {
     try {
       const url = new URL(`${STEAM_API_BASE}/IPlayerService/GetOwnedGames/v0001/`);
       url.searchParams.set('key', this.apiKey);
@@ -197,7 +200,18 @@ export class SteamApi {
       }
 
       const data = await response.json() as any;
-      return data.response.games || [];
+      const allGames = data.response.games || [];
+      
+      // 如果指定了 limit，先按游玩时长排序，然后返回前 limit 个
+      if (limit && limit > 0) {
+        return allGames
+          .sort((a: SteamGame, b: SteamGame) => 
+            (b.playtime_forever || 0) - (a.playtime_forever || 0)
+          )
+          .slice(0, limit);
+      }
+      
+      return allGames;
     } catch (error) {
       throw new Error(`Failed to fetch owned games: ${error}`);
     }

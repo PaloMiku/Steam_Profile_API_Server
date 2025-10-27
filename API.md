@@ -16,7 +16,7 @@ Steam Profile API 是一个 RESTful API，用于获取配置用户的 Steam 个�
 | 端点 | 用途 | 返回数据 | 缓存时长 |
 |-----|------|--------|--------|
 | `/api/steam-user` | 用户基本信息 | 用户资料、游戏统计、成就统计 | 10分钟 |
-| `/api/steam-games` | 游戏库信息 | 所有游戏列表、最近游戏、成就统计 | 24小时 |
+| `/api/steam-games` | 游戏库信息 | 所有游戏列表（支持自定义数量）、最近游戏、成就统计 | 24小时 |
 | `/api/steam-achievements` | 成就详情 | 按游戏分组的详细成就列表 | 1小时 |
 
 **使用场景：**
@@ -33,7 +33,7 @@ Steam Profile API 是一个 RESTful API，用于获取配置用户的 Steam 个�
 | 端点 | 调用的 Steam API | 返回数据 | 注意事项 |
 |-----|-----------------|--------|--------|
 | `/api/steam-user` | `GetPlayerSummaries`<br/>`GetOwnedGames` | 用户资料、游戏数量、游玩时长统计 | **不包含**游戏列表、成就数据 |
-| `/api/steam-games` | `GetOwnedGames`<br/>`GetRecentlyPlayedGames`<br/>`GetGameDetails`<br/>`GetPlayerAchievements` | 游戏库（前100个）、最近游戏、成就统计 | **不包含**用户资料、成就详细列表 |
+| `/api/steam-games` | `GetOwnedGames`<br/>`GetRecentlyPlayedGames`<br/>`GetGameDetails`<br/>`GetPlayerAchievements` | 游戏库（前 N 个，默认 100，可通过 limit 参数自定义）、最近游戏、成就统计。游戏按总时长降序排序 | **不包含**用户资料、成就详细列表 |
 | `/api/steam-achievements` | `GetRecentlyPlayedGames`<br/>`GetOwnedGames`<br/>`GetPlayerAchievements` | 按游戏分组的成就详细列表 | **不包含**用户资料、游戏库详情 |
 
 **为什么这样设计？**
@@ -85,11 +85,18 @@ Accept: application/json
 
 ```bash
 curl -X GET "http://localhost:4000/api/steam-games"
+# 指定返回游戏数量（最多 100 个）
+curl -X GET "http://localhost:4000/api/steam-games?limit=30"
+# 指定地区获取价格
+curl -X GET "http://localhost:4000/api/steam-games?limit=20&cc=us"
 ```
 
 **查询参数：**
 
-无。API 直接返回游戏库数据。
+| 参数 | 类型 | 默认值 | 说明 |
+|-----|-----|--------|------|
+| `limit` | number | 100 | 返回游戏列表中的最大数量。支持范围：1-100。返回的游戏按总游玩时长降序排序 |
+| `cc` | string | cn | 国家/地区代码，影响游戏价格和货币显示（如 `us`, `jp`, `de` 等） |
 
 ---
 
@@ -341,7 +348,7 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 
 - `recentCount` 表示用户在最近两周内玩过的**所有游戏总数**（由 Steam 决定）
 - `recentGames` 中的游戏数量等于 `recentCount`（API 返回所有最近游戏）
-- `allGames` 中的游戏最多100个（前100个拥有的游戏）
+- `allGames` 中的游戏最多为 limit 个（默认 100，最多 100），**按总游玩时长降序排序**
 
 **RecentGame 字段：**
 
@@ -621,6 +628,16 @@ Steam 商店价格、货币等信息由 `cc` 查询参数控制：
 - `games.recentCount`: 用户最近两周内玩过的游戏总数（来自 Steam API）
 - `games.recentGames`: 实际返回的最近游戏列表
 
+### 游戏库返回数量和排序
+
+`/api/steam-games` 端点返回的 `allGames` 列表支持通过 `limit` 查询参数自定义返回的游戏数量。
+
+**说明**:
+
+- `limit` 参数：控制返回游戏的数量，取值范围 1-100，默认值 100
+- 返回的游戏**按总游玩时长（`playtimeForever`）降序排序**
+- 示例：`/api/steam-games?limit=30` 返回按时长排序的前 30 个游戏
+
 ### 缓存配置
 
 | 数据类型 | 默认 TTL | 环境变量 |
@@ -692,6 +709,14 @@ A: 因为 Steam API 返回的是用户在**最近两周内实际玩过的游戏*
 **Q: 能改变最近游戏的返回数量吗？**
 
 A: 不能。最近游戏数量完全由 Steam API 决定，无法通过配置改变。Steam 会返回用户最近两周内玩过的所有游戏。
+
+**Q: 能改变游戏库返回的数量吗？**
+
+A: 可以。使用 `limit` 查询参数自定义返回的游戏数量。例如 `/api/steam-games?limit=30` 会返回前 30 个游戏。支持范围：1-100。
+
+**Q: 游戏库是按什么顺序返回的？**
+
+A: 按总游玩时长（`playtimeForever`）降序排序。游玩时间最长的游戏会首先出现。
 
 **Q: 图片加载失败怎么办？**
 
