@@ -316,8 +316,28 @@ export interface AchievementsResponse {
   achievements: AchievementsData;
 }
 
+export interface SingleGameInfo {
+  appid: number;
+  name: string;
+  playtimeForever: number;
+  playtimeTwoWeeks: number;
+  price: GamePrice;
+  images: GameImages;
+  releaseDate: string;
+  shortDescription: string;
+  achievements?: {
+    total: number;
+    unlocked: number;
+    percentage: number;
+  };
+}
+
+export interface SingleGameResponse {
+  game: SingleGameInfo;
+}
+
 // 向后兼容：如果某些地方还用 ResponseData
-export type ResponseData = UserResponse | GamesResponse | AchievementsResponse;
+export type ResponseData = UserResponse | GamesResponse | AchievementsResponse | SingleGameResponse;
 
 export interface Metadata {
   cached: boolean;
@@ -328,7 +348,7 @@ export interface Metadata {
 
 export interface SuccessResponse {
   success: true;
-  data: UserResponse | GamesResponse | AchievementsResponse;
+  data: UserResponse | GamesResponse | AchievementsResponse | SingleGameResponse;
   metadata: Metadata;
 }
 

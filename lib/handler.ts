@@ -430,6 +430,84 @@ export async function handleSteamAchievementsRequest(
 }
 
 /**
+ * 获取单个游戏的详细信息和时间统计
+ * 职责：返回单个游戏的完整信息，包括时间统计、成就统计、价格等
+ */
+export async function handleSingleGameRequest(
+  steamUserId: string,
+  appId: number,
+  steamApi: SteamApi,
+  ttl: ReturnType<typeof getCacheTTL>
+): Promise<import('./types.js').SingleGameResponse> {
+  // 验证 appId 参数
+  if (!Number.isInteger(appId) || appId <= 0) {
+    throw new Error('Invalid appId: must be a positive integer');
+  }
+
+  const cacheKey = `steam-game-${steamUserId}-${appId}`;
+
+  // 检查缓存
+  const cached = cache.get<import('./types.js').SingleGameResponse>(cacheKey);
+  if (cached) {
+    Logger.debug(`Using cached Steam game data (appId=${appId})`);
+    return cached;
+  }
+
+  Logger.log(`Fetching fresh Steam game data for appId=${appId}`);
+  const startTime = Date.now();
+
+  try {
+    // 1. 获取该游戏的信息
+    const gameInfo = await steamApi.getPlayerGameInfo(steamUserId, appId);
+
+    if (!gameInfo.game) {
+      throw new Error(`Game with appId ${appId} not found in user's library`);
+    }
+
+    const game = gameInfo.game;
+    const detailsRaw = gameInfo.detailsRaw;
+    const details = detailsRaw?.data;
+    const priceOverview = details?.price_overview;
+
+    // 2. 构建响应数据
+    const responseData: import('./types.js').SingleGameResponse = {
+      game: {
+        appid: game.appid,
+        name: game.name,
+        playtimeForever: Math.floor((game.playtime_forever || 0) / 60),
+        playtimeTwoWeeks: Math.floor((game.playtime_2weeks || 0) / 60),
+        price: {
+          amount: priceOverview?.final || 0,
+          currency: priceOverview?.currency || 'CNY',
+          displayPrice: priceOverview?.final_formatted || (priceOverview?.final === 0 ? 'Free' : 'N/A'),
+        },
+        images: {
+          icon: ImageBuilder.gameIcon(game.appid, game.img_icon_url),
+          logo: ImageBuilder.gameLogo(game.appid, game.img_logo_url),
+          headerImage: ImageBuilder.gameHeader(game.appid),
+          heroImage: ImageBuilder.gameHero(game.appid),
+          libraryHeroImage: ImageBuilder.gameLibraryHero(game.appid),
+        },
+        releaseDate: details?.release_date?.date || 'Unknown',
+        shortDescription: details?.short_description || '',
+        achievements: gameInfo.achievements,
+      },
+    };
+
+    // 存储到缓存
+    cache.set(cacheKey, responseData, ttl.games);
+
+    const duration = Date.now() - startTime;
+    Logger.log(`Successfully fetched Steam game data in ${duration}ms (appId=${appId})`);
+
+    return responseData;
+  } catch (error) {
+    Logger.error(`Error fetching Steam game data (appId=${appId})`, error);
+    throw error;
+  }
+}
+
+/**
  * 创建平台中立的处理器函数
  */
 export function createPlatformHandler(handlerFn: (steamApi: any, ttl: any, steamUserId: string) => Promise<any>) {

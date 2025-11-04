@@ -368,4 +368,58 @@ export class SteamApi {
   async getSingleGameDetail(appId: number): Promise<GameDetailsResponse> {
     return this.getGameDetails([appId]);
   }
+
+  /**
+   * 获取玩家拥有的特定游戏的信息
+   * 包括游戏时间统计、成就统计
+   */
+  async getPlayerGameInfo(
+    steamId: string,
+    appId: number
+  ): Promise<{
+    game?: SteamGame;
+    detailsRaw?: any;
+    achievements?: {
+      total: number;
+      unlocked: number;
+      percentage: number;
+    };
+  }> {
+    try {
+      // 1. 获取用户拥有的所有游戏
+      const allGames = await this.getOwnedGames(steamId, true);
+      const game = allGames.find(g => g.appid === appId);
+
+      if (!game) {
+        return {};
+      }
+
+      // 2. 获取游戏详情
+      const gameDetailsMap = await this.getGameDetails([appId]);
+      const detailsRaw = gameDetailsMap[appId];
+
+      // 3. 获取成就统计
+      const achData = await this.getPlayerAchievements(steamId, appId);
+      const achievements =
+        achData && achData.playerAchievements.length > 0
+          ? {
+              total: achData.playerAchievements.length,
+              unlocked: achData.playerAchievements.filter(a => a.achieved === 1).length,
+              percentage: Math.round(
+                (achData.playerAchievements.filter(a => a.achieved === 1).length /
+                  achData.playerAchievements.length) *
+                  100
+              ),
+            }
+          : undefined;
+
+      return {
+        game,
+        detailsRaw,
+        achievements,
+      };
+    } catch (error) {
+      throw new Error(`Failed to fetch player game info: ${error}`);
+    }
+  }
 }

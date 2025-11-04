@@ -8,6 +8,7 @@ import {
   getCacheTTL,
   handleSteamUserRequest,
   handleSteamGamesRequest,
+  handleSingleGameRequest,
   handleSteamAchievementsRequest,
   clearGamesCache,
 } from './lib/handler.js';
@@ -152,6 +153,86 @@ app.get('/api/steam-games', async (req, res) => {
   }
 });
 
+// Single game API endpoint
+app.get('/api/steam-game', async (req, res) => {
+  const envCheck = validateEnvironment();
+  if (!envCheck.valid) {
+    Logger.error('Environment validation failed', envCheck.error);
+    const errorResponse: ErrorResponse = {
+      success: false,
+      error: envCheck.error || 'Environment error',
+      code: 'ENV_ERROR',
+    };
+    return res.status(500).json(errorResponse);
+  }
+
+  try {
+    // 获取并验证 appid 参数
+    const appIdParam = req.query.appid as string;
+    if (!appIdParam) {
+      const errorResponse: ErrorResponse = {
+        success: false,
+        error: 'Missing required query parameter: appid',
+        code: 'MISSING_PARAM',
+      };
+      return res.status(400).json(errorResponse);
+    }
+
+    const appId = parseInt(appIdParam, 10);
+    if (isNaN(appId) || appId <= 0) {
+      const errorResponse: ErrorResponse = {
+        success: false,
+        error: 'Invalid appid: must be a positive integer',
+        code: 'INVALID_PARAM',
+      };
+      return res.status(400).json(errorResponse);
+    }
+
+    const steamApiKey = process.env.STEAM_API_KEY!;
+    const steamUserId = process.env.STEAM_USER_ID!;
+    const ttl = getCacheTTL();
+
+    const countryCode = (req.query.cc as string) || undefined;
+
+    Logger.log(`API request: appid=${appId}, cc=${countryCode || 'default'}`);
+    const steamApi = new SteamApi(steamApiKey, countryCode);
+    const startTime = Date.now();
+
+    const data = await handleSingleGameRequest(steamUserId, appId, steamApi, ttl);
+
+    const successResponse: SuccessResponse = {
+      success: true,
+      data: data as any,
+      metadata: {
+        cached: false,
+        cachedAt: new Date().toISOString(),
+        cacheExpiry: new Date(Date.now() + ttl.games).toISOString(),
+        fetchDuration: `${Date.now() - startTime}ms`,
+      },
+    };
+
+    res.status(200).json(successResponse);
+  } catch (error) {
+    Logger.error('API error', error);
+    
+    if (error instanceof Error && error.message.includes('not found')) {
+      const errorResponse: ErrorResponse = {
+        success: false,
+        error: `Game not found in user's library`,
+        code: 'GAME_NOT_FOUND',
+      };
+      return res.status(404).json(errorResponse);
+    }
+    
+    const errorResponse: ErrorResponse = {
+      success: false,
+      error: 'Failed to fetch Steam game data',
+      code: 'STEAM_API_ERROR',
+    };
+    res.status(500).json(errorResponse);
+  }
+});
+
 // Achievements API endpoint
 app.get('/api/steam-achievements', async (req, res) => {
   const envCheck = validateEnvironment();
@@ -198,6 +279,7 @@ app.get('/api/steam-achievements', async (req, res) => {
     res.status(500).json(errorResponse);
   }
 });
+
 app.use((req, res) => {
   const errorResponse: ErrorResponse = {
     success: false,
@@ -240,6 +322,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       console.log('\n  📌 API Endpoints:');
       console.log(`     • User Info:        \x1b[36mGET /api/steam-user\x1b[0m`);
       console.log(`     • Games Library:    \x1b[36mGET /api/steam-games\x1b[0m`);
+      console.log(`     • Single Game:      \x1b[36mGET /api/steam-game?appid=xxx\x1b[0m`);
       console.log(`     • Achievements:     \x1b[36mGET /api/steam-achievements\x1b[0m`);
       console.log(`\n  • Health check:      \x1b[36mGET /health\x1b[0m`);
       console.log('\n');

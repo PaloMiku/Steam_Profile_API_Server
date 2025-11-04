@@ -17,23 +17,26 @@ Steam Profile API 是一个 RESTful API，用于获取配置用户的 Steam 个�
 |-----|------|--------|--------|
 | `/api/steam-user` | 用户基本信息 | 用户资料、游戏统计、成就统计 | 10分钟 |
 | `/api/steam-games` | 游戏库信息 | 所有游戏列表（支持自定义数量）、最近游戏、成就统计 | 24小时 |
+| `/api/steam-game` | 单个游戏详情 | 指定游戏的完整信息、游玩时间、成就统计 | 24小时 |
 | `/api/steam-achievements` | 成就详情 | 按游戏分组的详细成就列表 | 1小时 |
 
 **使用场景：**
 
 - 需要用户基本信息（名称、头像、游戏总数）：调用 `/api/steam-user` 
 - 需要游戏库和最近游戏详情：调用 `/api/steam-games`（包含价格、发布日期、成就统计）
+- 需要查询特定游戏的详细信息和个人游玩时间：调用 `/api/steam-game?appid=xxx`
 - 需要成就详细列表：调用 `/api/steam-achievements`（包含每个成就的解锁状态）
 - 优化性能：分别调用各端点，按需获取，各端点独立缓存
 
 **端点职责分离（明确划分，避免冗余调用）**
 
-为了保持查询快速响应，三个端点职责完全分离，各自只发起必要的 Steam API 请求：
+为了保持查询快速响应，各端点职责完全分离，各自只发起必要的 Steam API 请求：
 
 | 端点 | 调用的 Steam API | 返回数据 | 注意事项 |
 |-----|-----------------|--------|--------|
 | `/api/steam-user` | `GetPlayerSummaries`<br/>`GetOwnedGames` | 用户资料、游戏数量、游玩时长统计 | **不包含**游戏列表、成就数据 |
 | `/api/steam-games` | `GetOwnedGames`<br/>`GetRecentlyPlayedGames`<br/>`GetGameDetails`<br/>`GetPlayerAchievements` | 游戏库（前 N 个，默认 100，可通过 limit 参数自定义）、最近游戏、成就统计。游戏按总时长降序排序 | **不包含**用户资料、成就详细列表 |
+| `/api/steam-game` | `GetOwnedGames`<br/>`GetGameDetails`<br/>`GetPlayerAchievements` | 指定游戏的完整信息：游玩时间、价格、图片、简介、成就统计 | 需要 `appid` 参数，仅返回用户拥有的游戏 |
 | `/api/steam-achievements` | `GetRecentlyPlayedGames`<br/>`GetOwnedGames`<br/>`GetPlayerAchievements` | 按游戏分组的成就详细列表 | **不包含**用户资料、游戏库详情 |
 
 **为什么这样设计？**
@@ -97,6 +100,40 @@ curl -X GET "http://localhost:4000/api/steam-games?limit=20&cc=us"
 |-----|-----|--------|------|
 | `limit` | number | 100 | 返回游戏列表中的最大数量。支持范围：1-100。返回的游戏按总游玩时长降序排序 |
 | `cc` | string | cn | 国家/地区代码，影响游戏价格和货币显示（如 `us`, `jp`, `de` 等） |
+
+---
+
+### GET /api/steam-game
+
+获取指定 Steam 游戏的详细信息、个人游玩时间和成就统计。
+
+**示例请求：**
+
+```bash
+# 获取游戏 ID 为 570 (Dota 2) 的详细信息
+curl -X GET "http://localhost:4000/api/steam-game?appid=570"
+# 指定地区获取价格
+curl -X GET "http://localhost:4000/api/steam-game?appid=570&cc=us"
+```
+
+**请求头：**
+
+```
+GET /api/steam-game?appid=570 HTTP/1.1
+Host: localhost:4000
+Accept: application/json
+```
+
+**查询参数：**
+
+| 参数 | 类型 | 必需 | 说明 |
+|-----|-----|------|------|
+| `appid` | number | 是 | Steam 应用 ID，必须是用户拥有的游戏 |
+| `cc` | string | 否 | 国家/地区代码，影响游戏价格和货币显示（如 `us`, `jp`, `de` 等），默认为 `cn` |
+
+**响应成功条件：**
+- 用户拥有该游戏
+- appid 是有效的正整数
 
 ---
 
@@ -165,6 +202,46 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 }
 ```
 
+**`/api/steam-game` 响应示例：**
+```json
+{
+  "success": true,
+  "data": {
+    "game": {
+      "appid": 570,
+      "name": "Dota 2",
+      "playtimeForever": 3600,
+      "playtimeTwoWeeks": 120,
+      "price": {
+        "amount": 0,
+        "currency": "CNY",
+        "displayPrice": "Free to Play"
+      },
+      "images": {
+        "icon": "https://media.steampowered.com/steamcommunity/public/images/apps/570/..._icon.jpg",
+        "logo": "https://media.steampowered.com/steamcommunity/public/images/apps/570/..._logo.png",
+        "headerImage": "https://cdn.cloudflare.steamstatic.com/steam/apps/570/header.jpg",
+        "heroImage": "https://cdn.cloudflare.steamstatic.com/steam/apps/570/hero.jpg",
+        "libraryHeroImage": "https://cdn.cloudflare.steamstatic.com/steam/apps/570/library_hero.jpg"
+      },
+      "releaseDate": "2011-04-09",
+      "shortDescription": "Every day, millions of players worldwide enter battle as one of over a hundred Dota heroes...",
+      "achievements": {
+        "total": 14,
+        "unlocked": 10,
+        "percentage": 71
+      }
+    }
+  },
+  "metadata": {
+    "cached": false,
+    "cachedAt": "2025-10-18T12:34:56.789Z",
+    "cacheExpiry": "2025-10-18T13:34:56.789Z",
+    "fetchDuration": "2345ms"
+  }
+}
+```
+
 **`/api/steam-achievements` 响应示例：**
 ```json
 {
@@ -214,6 +291,9 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 
 // /api/steam-games 返回
 { "games": { ... } }
+
+// /api/steam-game 返回
+{ "game": { ... } }
 
 // /api/steam-achievements 返回
 { "achievements": { ... } }
@@ -388,7 +468,61 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 
 ---
 
-### 3. Achievements 对象（/api/steam-achievements）
+### 3. SingleGameInfo 对象（/api/steam-game）
+
+单个游戏的详细信息。
+
+```typescript
+{
+  "game": {
+    "appid": 570,                             // Steam 应用 ID
+    "name": "Dota 2",                         // 游戏名称
+    "playtimeForever": 3600,                  // 总游玩时长（小时）
+    "playtimeTwoWeeks": 120,                  // 两周内游玩时长（小时）
+    "price": {
+      "amount": 0,                            // 价格（美分）
+      "currency": "CNY",                      // 货币代码
+      "displayPrice": "Free to Play"          // 格式化的价格显示
+    },
+    "images": {
+      "icon": "https://media.steampowered.com/steamcommunity/public/images/apps/570/..._icon.jpg",
+      "logo": "https://media.steampowered.com/steamcommunity/public/images/apps/570/..._logo.png",
+      "headerImage": "https://cdn.cloudflare.steamstatic.com/steam/apps/570/header.jpg",
+      "heroImage": "https://cdn.cloudflare.steamstatic.com/steam/apps/570/hero.jpg",
+      "libraryHeroImage": "https://cdn.cloudflare.steamstatic.com/steam/apps/570/library_hero.jpg"
+    },
+    "releaseDate": "2011-04-09",              // 发布日期
+    "shortDescription": "Every day, millions of players...",  // 游戏简介
+    "achievements": {                         // 该游戏的成就统计（可选）
+      "total": 14,                            // 成就总数
+      "unlocked": 10,                         // 已解锁成就数
+      "percentage": 71                        // 完成百分比
+    }
+  }
+}
+```
+
+**字段说明：**
+
+| 字段 | 类型 | 说明 |
+|-----|-----|------|
+| `appid` | number | Steam 应用 ID |
+| `name` | string | 游戏名称 |
+| `playtimeForever` | number | 总游玩时长（小时） |
+| `playtimeTwoWeeks` | number | 近两周游玩时长（小时） |
+| `price.amount` | number | 价格（美分），0表示免费 |
+| `price.currency` | string | 货币代码（如 USD、CNY） |
+| `price.displayPrice` | string | 格式化的价格显示 |
+| `images.*` | string | 游戏相关图片的 Steam CDN URL |
+| `releaseDate` | string | 发布日期（YYYY-MM-DD） |
+| `shortDescription` | string | 游戏简介 |
+| `achievements.total` | number | 该游戏的成就总数（可选） |
+| `achievements.unlocked` | number | 该游戏已解锁的成就数（可选） |
+| `achievements.percentage` | number | 该游戏的成就完成百分比（可选） |
+
+---
+
+### 4. Achievements 对象（/api/steam-achievements）
 
 成就信息。
 
@@ -456,7 +590,7 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 
 ---
 
-### 4. Metadata 对象（所有端点）
+### 5. Metadata 对象（所有端点）
 
 响应元数据。
 
@@ -579,6 +713,61 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 **原因**: 请求的路径不存在
 
 **解决方案**: 检查 URL 是否正确，应为 `/api/steam-user`
+
+#### 6. 缺少必需查询参数 (仅限 /api/steam-game)
+
+```json
+{
+  "success": false,
+  "error": "Missing required query parameter: appid",
+  "code": "MISSING_PARAM"
+}
+```
+
+**状态码**: 400
+
+**原因**: `/api/steam-game` 端点需要 `appid` 查询参数
+
+**解决方案**: 提供有效的 `appid` 参数，例如 `/api/steam-game?appid=570`
+
+#### 7. 无效的应用 ID (仅限 /api/steam-game)
+
+```json
+{
+  "success": false,
+  "error": "Invalid appid: must be a positive integer",
+  "code": "INVALID_PARAM"
+}
+```
+
+**状态码**: 400
+
+**原因**: `appid` 参数不是有效的正整数
+
+**解决方案**: 确保 `appid` 是一个正整数，例如 `?appid=570`
+
+#### 8. 游戏不在用户库中 (仅限 /api/steam-game)
+
+```json
+{
+  "success": false,
+  "error": "Game with appId 999999 not found in user's library",
+  "code": "GAME_NOT_FOUND"
+}
+```
+
+**状态码**: 404
+
+**原因**: 
+
+- 指定的游戏不在配置用户的游戏库中
+- 游戏 ID 不正确
+
+**解决方案**:
+
+1. 确保 `appid` 值正确
+2. 确保该游戏已购买或已添加到用户的库中
+3. 可以先调用 `/api/steam-games` 查看用户拥有的所有游戏
 
 ---
 
@@ -718,8 +907,20 @@ A: 可以。使用 `limit` 查询参数自定义返回的游戏数量。例如 `
 
 A: 按总游玩时长（`playtimeForever`）降序排序。游玩时间最长的游戏会首先出现。
 
+**Q: 如何获取单个游戏的详细信息？**
+
+A: 使用 `/api/steam-game?appid=xxx` 端点，其中 `xxx` 是游戏的 Steam App ID。例如：`/api/steam-game?appid=570`。该端点返回单个游戏的完整信息，包括游玩时间统计、价格、成就统计等。
+
+**Q: `/api/steam-game` 端点支持查询用户没有购买的游戏吗？**
+
+A: 不支持。该端点仅返回用户已购买或拥有的游戏。如果查询用户没有的游戏，将返回 404 错误 `GAME_NOT_FOUND`。
+
 **Q: 图片加载失败怎么办？**
 
 A: 这是 Steam CDN 的临时问题。所有图片 URL 都是有效的公开 Steam CDN 链接。
+
+---
+
+```
 
 ---
