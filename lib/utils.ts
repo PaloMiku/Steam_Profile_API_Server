@@ -3,48 +3,6 @@
  */
 
 /**
- * 将个性化 URL 转换为 Steam ID
- */
-export function parseVanityUrl(url: string): string | null {
-  // 如果已经是数字 ID，直接返回
-  if (/^\d{17}$/.test(url)) {
-    return url;
-  }
-
-  // 如果包含 steamid 参数，提取数字
-  const steamIdMatch = url.match(/steamid=(\d{17})/);
-  if (steamIdMatch) {
-    return steamIdMatch[1];
-  }
-
-  // 如果是 /profiles/123456789 格式
-  const profileMatch = url.match(/\/profiles\/(\d{17})/);
-  if (profileMatch) {
-    return profileMatch[1];
-  }
-
-  return null;
-}
-
-/**
- * 延迟函数
- */
-export function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * 格式化字节为可读大小
- */
-export function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 Bytes';
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
-}
-
-/**
  * 获取状态文本
  */
 export function getStatusText(personaState: number): {
@@ -71,6 +29,19 @@ export function getStatusText(personaState: number): {
 }
 
 /**
+ * 占位图：1x1 中性灰 SVG。
+ * 选 data URI 而非空字符串或第三方占位服务：空字符串前端仍可能照常发起请求，
+ * 外部服务又多一层可失效的依赖，这个不依赖网络、任何环境下都能渲染。
+ */
+const PLACEHOLDER_IMAGE =
+  'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221%22 height=%221%22%3E%3Crect width=%221%22 height=%221%22 fill=%22%23cccccc%22/%3E%3C/svg%3E';
+
+const isValidAppId = (appId: number): boolean => Number.isFinite(appId) && appId > 0;
+
+const hasHash = (hash: string | undefined | null): hash is string =>
+  typeof hash === 'string' && hash.trim().length > 0;
+
+/**
  * 构建 Steam CDN 图片 URL
  */
 export const ImageBuilder = {
@@ -78,6 +49,7 @@ export const ImageBuilder = {
    * 游戏图标
    */
   gameIcon(appId: number, iconHash: string): string {
+    if (!isValidAppId(appId) || !hasHash(iconHash)) return PLACEHOLDER_IMAGE;
     return `https://media.steampowered.com/steamcommunity/public/images/apps/${appId}/${iconHash}.jpg`;
   },
 
@@ -85,6 +57,7 @@ export const ImageBuilder = {
    * 游戏 Logo
    */
   gameLogo(appId: number, logoHash: string): string {
+    if (!isValidAppId(appId) || !hasHash(logoHash)) return PLACEHOLDER_IMAGE;
     return `https://media.steampowered.com/steamcommunity/public/images/apps/${appId}/${logoHash}.png`;
   },
 
@@ -92,6 +65,7 @@ export const ImageBuilder = {
    * 游戏头部图（460x215）
    */
   gameHeader(appId: number): string {
+    if (!isValidAppId(appId)) return PLACEHOLDER_IMAGE;
     return `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg`;
   },
 
@@ -99,6 +73,7 @@ export const ImageBuilder = {
    * 游戏 Hero 图
    */
   gameHero(appId: number): string {
+    if (!isValidAppId(appId)) return PLACEHOLDER_IMAGE;
     return `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/hero.jpg`;
   },
 
@@ -106,6 +81,7 @@ export const ImageBuilder = {
    * 游戏库存艺术（Library Hero）
    */
   gameLibraryHero(appId: number): string {
+    if (!isValidAppId(appId)) return PLACEHOLDER_IMAGE;
     return `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/library_hero.jpg`;
   },
 
@@ -113,6 +89,7 @@ export const ImageBuilder = {
    * 游戏截图
    */
   gameScreenshot(appId: number, screenshotId: string): string {
+    if (!isValidAppId(appId) || !hasHash(screenshotId)) return PLACEHOLDER_IMAGE;
     return `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/ss_${screenshotId}.jpg`;
   },
 
@@ -120,6 +97,7 @@ export const ImageBuilder = {
    * 成就图标（已解锁）
    */
   achievementIcon(appId: number, iconHash: string): string {
+    if (!isValidAppId(appId) || !hasHash(iconHash)) return PLACEHOLDER_IMAGE;
     return `https://media.steampowered.com/steamcommunity/public/images/apps/${appId}/achievements/${iconHash}.jpg`;
   },
 
@@ -127,6 +105,7 @@ export const ImageBuilder = {
    * 成就图标（未解锁）
    */
   achievementIconGray(appId: number, iconHash: string): string {
+    if (!isValidAppId(appId) || !hasHash(iconHash)) return PLACEHOLDER_IMAGE;
     return `https://media.steampowered.com/steamcommunity/public/images/apps/${appId}/achievements/${iconHash}_bw.jpg`;
   },
 
@@ -134,6 +113,7 @@ export const ImageBuilder = {
    * 用户头像小
    */
   userAvatarSmall(avatarHash: string): string {
+    if (!hasHash(avatarHash)) return PLACEHOLDER_IMAGE;
     return `https://avatars.steamstatic.com/${avatarHash}_small.jpg`;
   },
 
@@ -141,6 +121,7 @@ export const ImageBuilder = {
    * 用户头像中
    */
   userAvatarMedium(avatarHash: string): string {
+    if (!hasHash(avatarHash)) return PLACEHOLDER_IMAGE;
     return `https://avatars.steamstatic.com/${avatarHash}_medium.jpg`;
   },
 
@@ -148,6 +129,7 @@ export const ImageBuilder = {
    * 用户头像大
    */
   userAvatarLarge(avatarHash: string): string {
+    if (!hasHash(avatarHash)) return PLACEHOLDER_IMAGE;
     return `https://avatars.steamstatic.com/${avatarHash}_full.jpg`;
   },
 };
