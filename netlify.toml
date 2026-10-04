@@ -1,6 +1,9 @@
 [build]
   command = "npm run build:platforms"
   functions = "netlify/functions"
+  # 纯函数项目，没有静态产物。必须显式指定：留空时 Netlify 会发布仓库根目录，
+  # 把 node_modules 和源码一起发出去，且 "building site" 阶段会失败
+  publish = "public"
 
 [template.environment]
   # 必需配置
