@@ -1,286 +1,31 @@
 import express from 'express';
-import { Server as HTTPServer } from 'http';
+import { fileURLToPath } from 'url';
 import 'dotenv/config.js';
-import { SteamApi } from './lib/steam-api.js';
+import { CORS_HEADERS } from './lib/app.js';
+import { nodeStyle } from './lib/node-shim.js';
 import { Logger } from './lib/utils.js';
-import {
-  validateEnvironment,
-  getCacheTTL,
-  handleSteamUserRequest,
-  handleSteamGamesRequest,
-  handleSingleGameRequest,
-  handleSteamAchievementsRequest,
-  clearGamesCache,
-} from './lib/handler.js';
-import type { SuccessResponse, ErrorResponse } from './lib/types.js';
+import type { ErrorResponse } from './lib/types.js';
 import type { Express } from 'express';
 
 const app: Express = express();
 const DEFAULT_PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
 
-// CORS middleware
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  res.header('Content-Type', 'application/json; charset=utf-8');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
-  next();
-});
+const api = nodeStyle();
+// Express 5 的 path-to-regexp 8 要求通配符必须命名，裸 * 会导致启动即抛错
+app.all('/api/*splat', api);
 
 // Health check
 app.get('/health', (req, res) => {
+  for (const [name, value] of Object.entries(CORS_HEADERS)) {
+    res.setHeader(name, value);
+  }
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Main API endpoint
-app.get('/api/steam-user', async (req, res) => {
-  if (req.method !== 'GET') {
-    const errorResponse: ErrorResponse = {
-      success: false,
-      error: 'Method not allowed',
-      code: 'METHOD_NOT_ALLOWED',
-    };
-    return res.status(405).json(errorResponse);
-  }
-
-  const envCheck = validateEnvironment();
-  if (!envCheck.valid) {
-    Logger.error('Environment validation failed', envCheck.error);
-    const errorResponse: ErrorResponse = {
-      success: false,
-      error: envCheck.error || 'Environment error',
-      code: 'ENV_ERROR',
-    };
-    return res.status(500).json(errorResponse);
-  }
-
-  try {
-    const steamApiKey = process.env.STEAM_API_KEY!;
-    const steamUserId = process.env.STEAM_USER_ID!;
-    const ttl = getCacheTTL();
-
-  const countryCode = (req.query.cc as string) || undefined;
-  const steamApi = new SteamApi(steamApiKey, countryCode);
-    const startTime = Date.now();
-
-    const data = await handleSteamUserRequest(steamUserId, steamApi, ttl);
-
-    const successResponse: SuccessResponse = {
-      success: true,
-      data,
-      metadata: {
-        cached: true,
-        cachedAt: new Date().toISOString(),
-        cacheExpiry: new Date(Date.now() + ttl.user).toISOString(),
-        fetchDuration: `${Date.now() - startTime}ms`,
-      },
-    };
-
-    res.status(200).json(successResponse);
-  } catch (error) {
-    Logger.error('API error', error);
-    const errorResponse: ErrorResponse = {
-      success: false,
-      error: 'Failed to fetch Steam user data',
-      code: 'STEAM_API_ERROR',
-    };
-    res.status(500).json(errorResponse);
-  }
-});
-
-// Games API endpoint
-app.get('/api/steam-games', async (req, res) => {
-  const envCheck = validateEnvironment();
-  if (!envCheck.valid) {
-    Logger.error('Environment validation failed', envCheck.error);
-    const errorResponse: ErrorResponse = {
-      success: false,
-      error: envCheck.error || 'Environment error',
-      code: 'ENV_ERROR',
-    };
-    return res.status(500).json(errorResponse);
-  }
-
-  try {
-    const steamApiKey = process.env.STEAM_API_KEY!;
-    const steamUserId = process.env.STEAM_USER_ID!;
-    const ttl = getCacheTTL();
-
-    const countryCode = (req.query.cc as string) || undefined;
-    const limitParam = (req.query.limit as string);
-    Logger.log(`Raw limit parameter: "${limitParam}" (type: ${typeof limitParam})`);
-    
-    let limit = parseInt(limitParam || '100', 10);
-    Logger.log(`Parsed limit: ${limit}, isNaN: ${isNaN(limit)}`);
-    
-    // 验证 limit 参数
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-      Logger.log(`Invalid limit value: ${limit}, resetting to 100`);
-      limit = 100;
-    }
-    
-    Logger.log(`API request: limit=${limit}, cc=${countryCode || 'default'}`);
-    const steamApi = new SteamApi(steamApiKey, countryCode);
-    const startTime = Date.now();
-
-    const data = await handleSteamGamesRequest(steamUserId, steamApi, ttl, limit);
-
-    const successResponse: SuccessResponse = {
-      success: true,
-      data: data as any,
-      metadata: {
-        cached: true,
-        cachedAt: new Date().toISOString(),
-        cacheExpiry: new Date(Date.now() + ttl.games).toISOString(),
-        fetchDuration: `${Date.now() - startTime}ms`,
-      },
-    };
-
-    res.status(200).json(successResponse);
-  } catch (error) {
-    Logger.error('API error', error);
-    const errorResponse: ErrorResponse = {
-      success: false,
-      error: 'Failed to fetch Steam games data',
-      code: 'STEAM_API_ERROR',
-    };
-    res.status(500).json(errorResponse);
-  }
-});
-
-// Single game API endpoint
-app.get('/api/steam-game', async (req, res) => {
-  const envCheck = validateEnvironment();
-  if (!envCheck.valid) {
-    Logger.error('Environment validation failed', envCheck.error);
-    const errorResponse: ErrorResponse = {
-      success: false,
-      error: envCheck.error || 'Environment error',
-      code: 'ENV_ERROR',
-    };
-    return res.status(500).json(errorResponse);
-  }
-
-  try {
-    // 获取并验证 appid 参数
-    const appIdParam = req.query.appid as string;
-    if (!appIdParam) {
-      const errorResponse: ErrorResponse = {
-        success: false,
-        error: 'Missing required query parameter: appid',
-        code: 'MISSING_PARAM',
-      };
-      return res.status(400).json(errorResponse);
-    }
-
-    const appId = parseInt(appIdParam, 10);
-    if (isNaN(appId) || appId <= 0) {
-      const errorResponse: ErrorResponse = {
-        success: false,
-        error: 'Invalid appid: must be a positive integer',
-        code: 'INVALID_PARAM',
-      };
-      return res.status(400).json(errorResponse);
-    }
-
-    const steamApiKey = process.env.STEAM_API_KEY!;
-    const steamUserId = process.env.STEAM_USER_ID!;
-    const ttl = getCacheTTL();
-
-    const countryCode = (req.query.cc as string) || undefined;
-
-    Logger.log(`API request: appid=${appId}, cc=${countryCode || 'default'}`);
-    const steamApi = new SteamApi(steamApiKey, countryCode);
-    const startTime = Date.now();
-
-    const data = await handleSingleGameRequest(steamUserId, appId, steamApi, ttl);
-
-    const successResponse: SuccessResponse = {
-      success: true,
-      data: data as any,
-      metadata: {
-        cached: false,
-        cachedAt: new Date().toISOString(),
-        cacheExpiry: new Date(Date.now() + ttl.games).toISOString(),
-        fetchDuration: `${Date.now() - startTime}ms`,
-      },
-    };
-
-    res.status(200).json(successResponse);
-  } catch (error) {
-    Logger.error('API error', error);
-    
-    if (error instanceof Error && error.message.includes('not found')) {
-      const errorResponse: ErrorResponse = {
-        success: false,
-        error: `Game not found in user's library`,
-        code: 'GAME_NOT_FOUND',
-      };
-      return res.status(404).json(errorResponse);
-    }
-    
-    const errorResponse: ErrorResponse = {
-      success: false,
-      error: 'Failed to fetch Steam game data',
-      code: 'STEAM_API_ERROR',
-    };
-    res.status(500).json(errorResponse);
-  }
-});
-
-// Achievements API endpoint
-app.get('/api/steam-achievements', async (req, res) => {
-  const envCheck = validateEnvironment();
-  if (!envCheck.valid) {
-    Logger.error('Environment validation failed', envCheck.error);
-    const errorResponse: ErrorResponse = {
-      success: false,
-      error: envCheck.error || 'Environment error',
-      code: 'ENV_ERROR',
-    };
-    return res.status(500).json(errorResponse);
-  }
-
-  try {
-    const steamApiKey = process.env.STEAM_API_KEY!;
-    const steamUserId = process.env.STEAM_USER_ID!;
-    const ttl = getCacheTTL();
-
-  const countryCode = (req.query.cc as string) || undefined;
-  const steamApi = new SteamApi(steamApiKey, countryCode);
-    const startTime = Date.now();
-
-    const data = await handleSteamAchievementsRequest(steamUserId, steamApi, ttl);
-
-    const successResponse: SuccessResponse = {
-      success: true,
-      data: data as any,
-      metadata: {
-        cached: true,
-        cachedAt: new Date().toISOString(),
-        cacheExpiry: new Date(Date.now() + ttl.achievements).toISOString(),
-        fetchDuration: `${Date.now() - startTime}ms`,
-      },
-    };
-
-    res.status(200).json(successResponse);
-  } catch (error) {
-    Logger.error('API error', error);
-    const errorResponse: ErrorResponse = {
-      success: false,
-      error: 'Failed to fetch Steam achievements data',
-      code: 'STEAM_API_ERROR',
-    };
-    res.status(500).json(errorResponse);
-  }
-});
-
 app.use((req, res) => {
+  for (const [name, value] of Object.entries(CORS_HEADERS)) {
+    res.setHeader(name, value);
+  }
   const errorResponse: ErrorResponse = {
     success: false,
     error: 'Not found',
@@ -290,7 +35,7 @@ app.use((req, res) => {
 });
 
 // Error handler
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   Logger.error('Unhandled error', err);
   const errorResponse: ErrorResponse = {
     success: false,
@@ -301,7 +46,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 // Start server
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (fileURLToPath(import.meta.url) === process.argv[1]) {
   const startServer = (port: number, retried: boolean = false) => {
     const server = app.listen(port, () => {
       console.clear();
@@ -312,13 +57,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       console.log('  ║                                               ║');
       console.log('  ╚═══════════════════════════════════════════════╝');
       console.log('\n');
-      
+
       const actualPort = (server.address() as any).port;
       console.log(`  ✓ Server running at: \x1b[36mhttp://localhost:${actualPort}\x1b[0m`);
       if (retried) {
         console.log(`  ⚠️  使用随机端口，因为默认端口 ${DEFAULT_PORT} 已被占用`);
       }
-      
+
       console.log('\n  📌 API Endpoints:');
       console.log(`     • User Info:        \x1b[36mGET /api/steam-user\x1b[0m`);
       console.log(`     • Games Library:    \x1b[36mGET /api/steam-games\x1b[0m`);
@@ -372,14 +117,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
           socket.destroy();
         });
         activeConnections.clear();
-        
+
         // 关闭服务器并等待所有连接关闭
         await new Promise<void>((resolve) => {
           server.close(() => {
             console.log('✓ 服务器已关闭');
             resolve();
           });
-          
+
           // 如果没有连接需要等待，则立即解析
           if (activeConnections.size === 0) {
             server.close(() => {
@@ -388,11 +133,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
             });
           }
         });
-        
+
         // 清理缓存资源
         const { cache } = await import('./lib/cache.js');
         cache.destroy();
-        
+
         clearTimeout(forceExitTimer);
         console.log('✓ 所有服务已正确关闭');
         process.exit(0);
@@ -414,7 +159,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     });
 
     // 捕获未处理的 Promise 拒绝
-    process.on('unhandledRejection', async (reason, promise) => {
+    process.on('unhandledRejection', async (reason, _promise) => {
       Logger.error('未处理的 Promise 拒绝', reason);
       await gracefulShutdown('unhandledRejection');
     });

@@ -373,3 +373,13 @@ export interface CacheItem<T> {
 export interface CacheStore {
   [key: string]: CacheItem<any>;
 }
+
+/**
+ * /api/steam-games 的 limit 边界
+ *
+ * 默认值取 50 而非上限 100：实测 140 游戏库在并发 16 下，limit=100 的冷请求
+ * 约 9 秒，limit=50 约 8 秒。前者贴着 Vercel Hobby 的 10 秒函数上限没有余量，
+ * 而 Cache-Control 让这条慢路径每天只走一次，一次失败就会导致整天取不到缓存。
+ */
+export const MAX_GAME_LIMIT = 100;
+export const DEFAULT_GAME_LIMIT = 50;

@@ -1,4 +1,4 @@
-import { CacheItem, CacheStore } from './types.js';
+import { CacheStore } from './types.js';
 
 /**
  * 简单的内存缓存实现

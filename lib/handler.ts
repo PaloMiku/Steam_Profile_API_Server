@@ -6,12 +6,50 @@
 import { SteamApi } from './steam-api.js';
 import { cache, getTTL, getTTLFromHours } from './cache.js';
 import { ImageBuilder, Logger, getStatusText } from './utils.js';
-import type { SuccessResponse, ErrorResponse, UserResponse, GamesResponse, AchievementsResponse } from './types.js';
+import { mapWithConcurrency, DEFAULT_CONCURRENCY } from './pool.js';
+import type { UserResponse, GamesResponse, AchievementsResponse, SingleGameResponse } from './types.js';
+import { DEFAULT_GAME_LIMIT, MAX_GAME_LIMIT } from './types.js';
+
+/**
+ * 处理器统一返回结构：业务数据 + 本次缓存的真实命中状态与时间戳
+ */
+export interface HandlerResult<T> {
+  data: T;
+  cacheHit: boolean;
+  cachedAt: string;
+  cacheExpiry: string;
+}
+
+/**
+ * 构造 HandlerResult 的缓存元信息
+ * MemoryCache 只暴露 getExpiry（= timestamp + ttl），据此反推写入时间，
+ * 避免为此改动 cache.ts
+ */
+function buildCacheMeta(cacheKey: string, ttlMs: number, cacheHit: boolean) {
+  if (cacheHit) {
+    const expiry = cache.getExpiry(cacheKey);
+    const expiryTime = expiry ? Date.parse(expiry) : NaN;
+    if (!Number.isNaN(expiryTime)) {
+      return {
+        cacheHit: true,
+        cachedAt: new Date(expiryTime - ttlMs).toISOString(),
+        cacheExpiry: new Date(expiryTime).toISOString(),
+      };
+    }
+  }
+
+  const now = Date.now();
+  return {
+    cacheHit,
+    cachedAt: new Date(now).toISOString(),
+    cacheExpiry: new Date(now + ttlMs).toISOString(),
+  };
+}
 
 // 验证环境变量
-export function validateEnvironment(): { valid: boolean; error?: string } {
-  const steamApiKey = process.env.STEAM_API_KEY;
-  const steamUserId = process.env.STEAM_USER_ID;
+export function validateEnvironment(env: Record<string, string | undefined> = process.env): { valid: boolean; error?: string } {
+  const steamApiKey = env.STEAM_API_KEY;
+  const steamUserId = env.STEAM_USER_ID;
 
   if (!steamApiKey) {
     return { valid: false, error: 'STEAM_API_KEY environment variable is not set' };
@@ -31,10 +69,10 @@ export function validateEnvironment(): { valid: boolean; error?: string } {
 /**
  * 获取缓存 TTL 配置
  */
-export function getCacheTTL() {
-  const userMinutes = parseInt(process.env.CACHE_TTL_USER_MINUTES || '10', 10);
-  const gamesHours = parseInt(process.env.CACHE_TTL_GAMES_HOURS || '24', 10);
-  const achievementsHours = parseInt(process.env.CACHE_TTL_ACHIEVEMENTS_HOURS || '1', 10);
+export function getCacheTTL(env: Record<string, string | undefined> = process.env) {
+  const userMinutes = parseInt(env.CACHE_TTL_USER_MINUTES || '10', 10);
+  const gamesHours = parseInt(env.CACHE_TTL_GAMES_HOURS || '24', 10);
+  const achievementsHours = parseInt(env.CACHE_TTL_ACHIEVEMENTS_HOURS || '1', 10);
 
   return {
     user: getTTL(userMinutes),
@@ -51,14 +89,14 @@ export async function handleSteamUserRequest(
   steamUserId: string,
   steamApi: SteamApi,
   ttl: ReturnType<typeof getCacheTTL>
-): Promise<UserResponse> {
+): Promise<HandlerResult<UserResponse>> {
   const cacheKey = `steam-user-${steamUserId}`;
 
   // 检查缓存
   const cached = cache.get<UserResponse>(cacheKey);
   if (cached) {
     Logger.debug('Using cached Steam user data');
-    return cached;
+    return { data: cached, ...buildCacheMeta(cacheKey, ttl.user, true) };
   }
 
   Logger.log('Fetching fresh Steam user data');
@@ -119,7 +157,7 @@ export async function handleSteamUserRequest(
     const duration = Date.now() - startTime;
     Logger.log(`Successfully fetched Steam user data in ${duration}ms`);
 
-    return responseData;
+    return { data: responseData, ...buildCacheMeta(cacheKey, ttl.user, false) };
   } catch (error) {
     Logger.error('Error fetching Steam user data', error);
     throw error;
@@ -134,11 +172,11 @@ export async function handleSteamGamesRequest(
   steamUserId: string,
   steamApi: SteamApi,
   ttl: ReturnType<typeof getCacheTTL>,
-  limit: number = 100
-): Promise<GamesResponse> {
+  limit: number = DEFAULT_GAME_LIMIT
+): Promise<HandlerResult<GamesResponse>> {
   // 验证 limit 参数
-  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-    limit = 100;
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_GAME_LIMIT) {
+    limit = DEFAULT_GAME_LIMIT;
   }
 
   const cacheKey = `steam-games-${steamUserId}-limit${limit}`;
@@ -147,65 +185,61 @@ export async function handleSteamGamesRequest(
   const cached = cache.get<GamesResponse>(cacheKey);
   if (cached) {
     Logger.debug(`Using cached Steam games data (limit=${limit})`);
-    return cached;
+    return { data: cached, ...buildCacheMeta(cacheKey, ttl.games, true) };
   }
 
   Logger.log('Fetching fresh Steam games data');
   const startTime = Date.now();
 
   try {
-    // 1. 先获取一份游戏总数（不限制）
-    Logger.log('Fetching total games count...');
-    const allGamesTotal = await steamApi.getOwnedGames(steamUserId, false);
-    const totalGameCount = allGamesTotal.length;
-
-    // 2. 获取限制数量的游戏列表（已按时长排序）
-    Logger.log(`Fetching owned games (limit=${limit})...`);
-    const allGames = await steamApi.getOwnedGames(steamUserId, true, limit);
-
-    // 2. 获取最近游戏
-    Logger.log('Fetching recently played games...');
-    const recentlyPlayedResult = await steamApi.getRecentlyPlayedGames(
-      steamUserId,
-      10  // 固定获取最近10个游戏
-    );
+    // 1. 全量拉取一次：既算 totalCount，也本地排序取前 limit 个
+    Logger.log('Fetching owned games (full)...');
+    const [allGamesFull, recentlyPlayedResult] = await Promise.all([
+      steamApi.getOwnedGames(steamUserId, true),
+      steamApi.getRecentlyPlayedGames(
+        steamUserId,
+        10  // 固定获取最近10个游戏
+      ),
+    ]);
+    const totalGameCount = allGamesFull.length;
+    const allGames = [...allGamesFull]
+      .sort((a, b) => (b.playtime_forever || 0) - (a.playtime_forever || 0))
+      .slice(0, limit);
     const recentlyPlayed = recentlyPlayedResult.games;
     const recentlyPlayedTotalCount = recentlyPlayedResult.totalCount;
 
-    // 3. 获取最近游戏的详细信息
+    // 2. 获取最近游戏的详细信息
     const topRecentAppIds = recentlyPlayed.map(g => g.appid);
     const gameDetailsMap = await steamApi.getGameDetails(topRecentAppIds);
 
-    // 4. 获取最近游戏和前 limit 个游戏的成就统计（仅用于显示数字，不包含详情）
+    // 3. 获取最近游戏和前 limit 个游戏的成就统计（仅用于显示数字，不包含详情）
     Logger.log('Fetching achievement statistics...');
     const achievementsDataMap: Record<
       number,
       Awaited<ReturnType<typeof steamApi.getPlayerAchievements>>
     > = {};
 
-    // 获取最近游戏的成就统计
-    for (const appId of topRecentAppIds) {
-      try {
-        achievementsDataMap[appId] = await steamApi.getPlayerAchievements(steamUserId, appId);
-      } catch (error) {
-        Logger.warn(`Failed to fetch achievements for app ${appId}`);
+    const achievementAppIds = Array.from(new Set([...topRecentAppIds, ...allGames.map(g => g.appid)]));
+    const achievementResults = await mapWithConcurrency(
+      achievementAppIds,
+      DEFAULT_CONCURRENCY,
+      async (appId) => {
+        try {
+          return await steamApi.getPlayerAchievements(steamUserId, appId);
+        } catch (error) {
+          Logger.warn(`Failed to fetch achievements for app ${appId}`);
+          return undefined;
+        }
       }
-    }
+    );
+    achievementAppIds.forEach((appId, index) => {
+      const result = achievementResults[index];
+      if (result) {
+        achievementsDataMap[appId] = result;
+      }
+    });
 
-    // 获取已返回游戏的成就统计（已经是 limit 个了）
-    const allGamesAppIds = allGames.map(g => g.appid);
-    for (const appId of allGamesAppIds) {
-      if (achievementsDataMap[appId]) {
-        continue;
-      }
-      try {
-        achievementsDataMap[appId] = await steamApi.getPlayerAchievements(steamUserId, appId);
-      } catch (error) {
-        Logger.warn(`Failed to fetch achievements for app ${appId}`);
-      }
-    }
-
-    // 5. 构建最近游戏列表
+    // 4. 构建最近游戏列表
     const recentGames = recentlyPlayed.map(game => {
       const details = gameDetailsMap[game.appid]?.data;
       const priceOverview = details?.price_overview;
@@ -242,7 +276,7 @@ export async function handleSteamGamesRequest(
       };
     });
 
-    // 6. 构建所有游戏列表（已按总时长排序）
+    // 5. 构建所有游戏列表（已按总时长排序）
     const allGamesList = allGames.map(game => {
       const achData = achievementsDataMap[game.appid];
       const achievements = achData && achData.playerAchievements.length > 0
@@ -281,7 +315,7 @@ export async function handleSteamGamesRequest(
     const duration = Date.now() - startTime;
     Logger.log(`Successfully fetched Steam games data in ${duration}ms (limit=${limit}, returned=${allGamesList.length} games, recent=${recentGames.length})`);
 
-    return gamesData;
+    return { data: gamesData, ...buildCacheMeta(cacheKey, ttl.games, false) };
   } catch (error) {
     Logger.error('Error fetching Steam games data', error);
     throw error;
@@ -296,14 +330,14 @@ export async function handleSteamAchievementsRequest(
   steamUserId: string,
   steamApi: SteamApi,
   ttl: ReturnType<typeof getCacheTTL>
-): Promise<AchievementsResponse> {
+): Promise<HandlerResult<AchievementsResponse>> {
   const cacheKey = `steam-achievements-${steamUserId}`;
 
   // 检查缓存
   const cached = cache.get<AchievementsResponse>(cacheKey);
   if (cached) {
     Logger.debug('Using cached Steam achievements data');
-    return cached;
+    return { data: cached, ...buildCacheMeta(cacheKey, ttl.achievements, true) };
   }
 
   Logger.log('Fetching fresh Steam achievements data');
@@ -330,35 +364,32 @@ export async function handleSteamAchievementsRequest(
       Awaited<ReturnType<typeof steamApi.getPlayerAchievements>>
     > = {};
 
-    // 获取最近游戏的成就
-    for (const appId of topRecentAppIds) {
-      try {
-        achievementsDataMap[appId] = await steamApi.getPlayerAchievements(steamUserId, appId);
-      } catch (error) {
-        Logger.warn(`Failed to fetch achievements for app ${appId}`);
+    const achievementAppIds = Array.from(new Set([...topRecentAppIds, ...allGamesAppIds]));
+    const achievementResults = await mapWithConcurrency(
+      achievementAppIds,
+      DEFAULT_CONCURRENCY,
+      async (appId) => {
+        try {
+          return await steamApi.getPlayerAchievements(steamUserId, appId);
+        } catch (error) {
+          Logger.warn(`Failed to fetch achievements for app ${appId}`);
+          return undefined;
+        }
       }
-    }
-
-    // 获取游戏库中前50个游戏的成就
-    for (const appId of allGamesAppIds) {
-      if (achievementsDataMap[appId]) {
-        continue;
+    );
+    achievementAppIds.forEach((appId, index) => {
+      const result = achievementResults[index];
+      if (result) {
+        achievementsDataMap[appId] = result;
       }
-      try {
-        achievementsDataMap[appId] = await steamApi.getPlayerAchievements(steamUserId, appId);
-      } catch (error) {
-        Logger.warn(`Failed to fetch achievements for app ${appId}`);
-      }
-    }
+    });
 
     // 4. 构建成就数据
     let totalAllAchievements = 0;
     let unlockedAllAchievements = 0;
     const achievementsByGame = [];
 
-    const allAchievementAppIds = Array.from(new Set([...topRecentAppIds, ...allGamesAppIds]));
-
-    for (const appId of allAchievementAppIds) {
+    for (const appId of achievementAppIds) {
       const achData = achievementsDataMap[appId];
       if (achData && achData.playerAchievements.length > 0) {
         const schemaMap: Record<string, typeof achData.achievements[0]> = {};
@@ -422,7 +453,7 @@ export async function handleSteamAchievementsRequest(
     const duration = Date.now() - startTime;
     Logger.log(`Successfully fetched Steam achievements data in ${duration}ms`);
 
-    return achievementsData;
+    return { data: achievementsData, ...buildCacheMeta(cacheKey, ttl.achievements, false) };
   } catch (error) {
     Logger.error('Error fetching Steam achievements data', error);
     throw error;
@@ -438,7 +469,7 @@ export async function handleSingleGameRequest(
   appId: number,
   steamApi: SteamApi,
   ttl: ReturnType<typeof getCacheTTL>
-): Promise<import('./types.js').SingleGameResponse> {
+): Promise<HandlerResult<SingleGameResponse>> {
   // 验证 appId 参数
   if (!Number.isInteger(appId) || appId <= 0) {
     throw new Error('Invalid appId: must be a positive integer');
@@ -447,10 +478,10 @@ export async function handleSingleGameRequest(
   const cacheKey = `steam-game-${steamUserId}-${appId}`;
 
   // 检查缓存
-  const cached = cache.get<import('./types.js').SingleGameResponse>(cacheKey);
+  const cached = cache.get<SingleGameResponse>(cacheKey);
   if (cached) {
     Logger.debug(`Using cached Steam game data (appId=${appId})`);
-    return cached;
+    return { data: cached, ...buildCacheMeta(cacheKey, ttl.games, true) };
   }
 
   Logger.log(`Fetching fresh Steam game data for appId=${appId}`);
@@ -470,7 +501,7 @@ export async function handleSingleGameRequest(
     const priceOverview = details?.price_overview;
 
     // 2. 构建响应数据
-    const responseData: import('./types.js').SingleGameResponse = {
+    const responseData: SingleGameResponse = {
       game: {
         appid: game.appid,
         name: game.name,
@@ -500,31 +531,11 @@ export async function handleSingleGameRequest(
     const duration = Date.now() - startTime;
     Logger.log(`Successfully fetched Steam game data in ${duration}ms (appId=${appId})`);
 
-    return responseData;
+    return { data: responseData, ...buildCacheMeta(cacheKey, ttl.games, false) };
   } catch (error) {
     Logger.error(`Error fetching Steam game data (appId=${appId})`, error);
     throw error;
   }
-}
-
-/**
- * 创建平台中立的处理器函数
- */
-export function createPlatformHandler(handlerFn: (steamApi: any, ttl: any, steamUserId: string) => Promise<any>) {
-  return async function platformHandler(context: { steamApiKey?: string; steamUserId?: string; countryCode?: string; language?: string; env?: any }) {
-    const { steamApiKey, steamUserId, countryCode, language, env } = context;
-
-    const envKey = steamApiKey || process.env.STEAM_API_KEY;
-    const userId = steamUserId || process.env.STEAM_USER_ID;
-
-    if (!envKey || !userId) {
-      throw new Error('Missing environment variables');
-    }
-
-    const steamApi = new SteamApi(envKey as string, countryCode as string | undefined, language as string | undefined);
-    const ttl = getCacheTTL();
-    return await handlerFn(steamApi, ttl, userId as string);
-  };
 }
 
 /**
