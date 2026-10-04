@@ -1,7 +1,6 @@
 [build]
   command = "npm run build:platforms"
-  functions = "dist/netlify/functions"
-  publish = "dist"
+  functions = "netlify/functions"
 
 [template.environment]
   SECRET_TOKEN = "change me for your secret token"

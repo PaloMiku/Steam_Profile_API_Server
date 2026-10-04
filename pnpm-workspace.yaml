@@ -1,0 +1,5 @@
+# pnpm 11 要求把需要执行构建脚本的依赖显式声明在这里，
+# 否则 esbuild 的安装脚本会被跳过，导致 vitest 无法启动。
+# esbuild 同时是 Netlify (node_bundler = "esbuild") 构建时需要的。
+allowBuilds:
+  esbuild: true

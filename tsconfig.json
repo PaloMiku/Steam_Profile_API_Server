@@ -19,14 +19,15 @@
     "moduleResolution": "node16"
   },
   "include": [
+    "api/**/*.ts",
+    "lib/**/*.ts",
     "netlify/**/*.ts",
-    "lib/**/*.ts"
+    "src/**/*.ts",
+    "vitest.config.ts",
+    "server.ts"
   ],
   "exclude": [
     "node_modules",
-    "dist",
-    "api",
-    "src",
-    "server.ts"
+    "dist"
   ]
 }

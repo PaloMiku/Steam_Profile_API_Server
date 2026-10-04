@@ -6,19 +6,21 @@ Steam Profile API 是一个 RESTful API，用于获取配置用户的 Steam 个�
 
 ### 基本信息
 
-- **HTTP 方法**: `GET`
+- **HTTP 方法**: `GET`（`OPTIONS` 用于 CORS 预检，返回 200 且无响应体）
 - **Content-Type**: `application/json; charset=utf-8`
 - **CORS**: 已启用（允许所有来源）
-- **缓存**: 默认启用，可通过环境变量配置
+- **缓存**: 两层。源站有一层进程内缓存，响应同时带 `Cache-Control: public, s-maxage=..., stale-while-revalidate=...` 交给 CDN 边缘缓存。两层用同一组环境变量控制 TTL，各端点独立
 
 ### 端点说明
 
-| 端点 | 用途 | 返回数据 | 缓存时长 |
+| 端点 | 用途 | 返回数据 | 边缘缓存时长 |
 |-----|------|--------|--------|
-| `/api/steam-user` | 用户基本信息 | 用户资料、游戏统计、成就统计 | 10分钟 |
+| `/api/steam-user` | 用户基本信息 | 用户资料、游戏数量、总游玩时长 | 10分钟 |
 | `/api/steam-games` | 游戏库信息 | 所有游戏列表（支持自定义数量）、最近游戏、成就统计 | 24小时 |
 | `/api/steam-game` | 单个游戏详情 | 指定游戏的完整信息、游玩时间、成就统计 | 24小时 |
 | `/api/steam-achievements` | 成就详情 | 按游戏分组的详细成就列表 | 1小时 |
+
+> 本地 Express 服务器额外提供 `GET /health`，返回 `{ "status": "ok", "timestamp": "..." }`，不请求 Steam。其余三个平台没有这个端点。
 
 **使用场景：**
 
@@ -35,24 +37,41 @@ Steam Profile API 是一个 RESTful API，用于获取配置用户的 Steam 个�
 | 端点 | 调用的 Steam API | 返回数据 | 注意事项 |
 |-----|-----------------|--------|--------|
 | `/api/steam-user` | `GetPlayerSummaries`<br/>`GetOwnedGames` | 用户资料、游戏数量、游玩时长统计 | **不包含**游戏列表、成就数据 |
-| `/api/steam-games` | `GetOwnedGames`<br/>`GetRecentlyPlayedGames`<br/>`GetGameDetails`<br/>`GetPlayerAchievements` | 游戏库（前 N 个，默认 100，可通过 limit 参数自定义）、最近游戏、成就统计。游戏按总时长降序排序 | **不包含**用户资料、成就详细列表 |
-| `/api/steam-game` | `GetOwnedGames`<br/>`GetGameDetails`<br/>`GetPlayerAchievements` | 指定游戏的完整信息：游玩时间、价格、图片、简介、成就统计 | 需要 `appid` 参数，仅返回用户拥有的游戏 |
-| `/api/steam-achievements` | `GetRecentlyPlayedGames`<br/>`GetOwnedGames`<br/>`GetPlayerAchievements` | 按游戏分组的成就详细列表 | **不包含**用户资料、游戏库详情 |
+| `/api/steam-games` | `GetOwnedGames`<br/>`GetRecentlyPlayedGames`<br/>`GetGameDetails`<br/>`GetPlayerAchievements` | 游戏库（前 N 个，默认 50，可通过 limit 参数自定义，范围 1-100）、最近游戏、成就统计。游戏按总时长降序排序 | **不包含**用户资料、成就详细列表。游戏库只全量拉取一次：游戏总数和 top-N 都在本地算，不会重复请求 |
+| `/api/steam-game` | `GetOwnedGames`<br/>`GetGameDetails`<br/>`GetPlayerAchievements` | 指定游戏的完整信息：游玩时间、价格、图片、简介、成就统计 | 需要 `appid` 参数，仅返回用户拥有的游戏。归属校验需要一次 `GetOwnedGames`，之后只针对这个 appid 拉商店详情和成就 |
+| `/api/steam-achievements` | `GetRecentlyPlayedGames`<br/>`GetOwnedGames`<br/>`GetPlayerAchievements` | 按游戏分组的成就详细列表 | **不包含**用户资料、游戏库详情。覆盖范围固定为最近游玩的 10 个游戏 + 游戏库中游玩时长最靠前的 50 个，不随 `limit` 变化 |
 
 **为什么这样设计？**
 
 - ✅ 每个端点只做自己的事，避免不必要的网络请求
 - ✅ 本地开发和生产环境行为完全一致（无环境相关的额外调用）
 - ✅ 客户端可以按需调用，不用一次性加载所有数据
-- ✅ 独立的缓存策略（用户信息10分钟、游戏24小时、成就1小时）
+- ✅ 独立的边缘缓存 TTL（用户信息10分钟、游戏24小时、成就1小时）
 
 **预期延迟（仅作参考）**
 
-- 首次请求（未命中缓存）：
+- 首次请求（未命中边缘缓存）：
   - `/api/steam-user`：1-2 秒（仅两个 API 调用）
-  - `/api/steam-games`：2-4 秒（需要获取最近游戏的详情和成就）
-  - `/api/steam-achievements`：3-5 秒（需要获取所有成就详情）
-- 缓存命中：通常 < 10ms
+  - `/api/steam-games`：见下方「游戏库耗时的实测数据」，随 `limit` 和并发上限浮动
+  - `/api/steam-achievements`：约 2.6 秒（实测）
+- 缓存命中：CDN 边缘命中通常 < 100ms；源站进程内缓存命中 < 10ms
+- 所有 Steam 请求都带超时（Web API 8 秒、商店接口 5 秒），单个请求卡住不会拖垮整个响应
+- 成就数据是并发拉取的（并发上限 16，可用 `STEAM_CONCURRENCY` 覆盖），冷启动耗时会明显低于逐个串行请求
+
+**游戏库耗时的实测数据**
+
+在真实 Steam 账号（约 140 个游戏）上实测冷缓存（两层缓存都未命中）耗时：
+
+| 并发上限 | `limit` | 耗时 |
+|---------|--------|------|
+| 8 | 100 | 14.7 秒 |
+| 16 | 100 | 7.4 ~ 9.1 秒 |
+| 16 | 50（默认） | 8.1 秒 |
+
+- 其中单次全量 `GetOwnedGames`（`include_appinfo=true`）固定占约 5 秒，100 个游戏的成就只占约 4 秒。也就是说 `/api/steam-games` 的耗时下限由这一次全量拉取决定，调小 `limit` 收益有限
+- 并发 16 是实测未出现 429 限流、未超时的上限。Vercel Hobby 的函数上限是 10 秒，并发 8 + `limit=100` 会直接超时，端点在该平台上不可用
+- `limit` 默认取 50 而不是上限 100，正是为了给这个 10 秒上限留余量。`?limit=100` 仍然可用，耗时在 7.4 ~ 9.1 秒之间浮动，接近上限
+- 库更大或网络更差时以上数字会同步放大，上表只作为量级参考
 
 ## 请求
 
@@ -88,18 +107,43 @@ Accept: application/json
 
 ```bash
 curl -X GET "http://localhost:4000/api/steam-games"
-# 指定返回游戏数量（最多 100 个）
+# 指定返回游戏数量（1-100，默认 50）
 curl -X GET "http://localhost:4000/api/steam-games?limit=30"
+# 拉满 100 个（耗时明显高于默认值，接近 Vercel Hobby 的 10 秒函数上限）
+curl -X GET "http://localhost:4000/api/steam-games?limit=100"
 # 指定地区获取价格
 curl -X GET "http://localhost:4000/api/steam-games?limit=20&cc=us"
+# 清除游戏库缓存（未配置 ADMIN_TOKEN 时）
+curl -X GET "http://localhost:4000/api/steam-games?clear_cache=true"
+# 清除游戏库缓存（配置了 ADMIN_TOKEN 时，推荐用请求头传令牌）
+curl -X GET "http://localhost:4000/api/steam-games?clear_cache=true" -H "Authorization: Bearer your_token"
+# 也可以退回用查询参数传令牌
+curl -X GET "http://localhost:4000/api/steam-games?clear_cache=true&admin_token=your_token"
 ```
 
 **查询参数：**
 
 | 参数 | 类型 | 默认值 | 说明 |
 |-----|-----|--------|------|
-| `limit` | number | 100 | 返回游戏列表中的最大数量。支持范围：1-100。返回的游戏按总游玩时长降序排序 |
+| `limit` | number | 50 | 返回游戏列表中的最大数量。支持范围：1-100，超出范围或非法值（非整数、缺省）一律回退为 50。返回的游戏按总游玩时长降序排序 |
 | `cc` | string | cn | 国家/地区代码，影响游戏价格和货币显示（如 `us`, `jp`, `de` 等） |
+| `clear_cache` | boolean | false | 置为 `true`（或 `1`）时先清除该用户的游戏库缓存再返回数据 |
+| `admin_token` | string | 无 | `clear_cache` 的鉴权令牌，**仅在服务端配置了 `ADMIN_TOKEN` 时需要**，且必须与配置值一致。等价写法是 `Authorization: Bearer <token>` 请求头 |
+
+> 默认值取 50 而不是上限 100，是因为 100 个游戏的冷请求实测在 7.4 ~ 9.1 秒，贴着 Vercel Hobby 的 10 秒函数上限，而 `Cache-Control` 让这条慢路径每天只走一次，一次超时就会整天取不到缓存。详见「游戏库耗时的实测数据」。
+
+**`clear_cache` 的鉴权行为：**
+
+- 服务端**未配置** `ADMIN_TOKEN`：任何人都可以带 `clear_cache=true` 触发清缓存（向后兼容既有部署）
+- 服务端**配置了** `ADMIN_TOKEN`：请求必须带上正确的令牌，否则返回 401 `UNAUTHORIZED`，且不会清缓存
+- 令牌优先从 `Authorization: Bearer <token>` 请求头读取，缺失时才回退到 `?admin_token=` 查询参数。**请求头优先**：两个都带时以请求头为准，请求头带了错误值即使查询参数正确也会被拒绝
+- 只有带了 `clear_cache=true` 的请求才会走鉴权，普通请求不需要令牌
+
+**`clear_cache` 与响应缓存：**
+
+实际执行了清缓存的这次响应会带 `Cache-Control: no-store`，不会被 CDN 边缘缓存。未带 `clear_cache` 的正常请求按该端点的 TTL 返回 `Cache-Control: public, s-maxage=...`。
+
+> 公网部署务必配置 `ADMIN_TOKEN`，否则这个参数等价于一个无鉴权的缓存失效开关，外部可反复把请求打到源站和 Steam。
 
 ---
 
@@ -394,7 +438,7 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
         }
       }
     ],
-    "allGames": [                             // 所有拥有游戏的简略信息（最多100个）
+    "allGames": [                             // 所有拥有游戏的简略信息（默认 50 个，最多 100 个）
       {
         "appid": 570,
         "name": "Dota 2",
@@ -422,13 +466,15 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 | `totalCount` | number | 拥有的游戏总数 |
 | `recentCount` | number | 最近两周内玩过的游戏总数（由 Steam API 返回） |
 | `recentGames` | array | 最近玩过的游戏详细信息（数量 ≤ recentCount） |
-| `allGames` | array | 所有拥有游戏的简略信息（最多100个） |
+| `allGames` | array | 所有拥有游戏的简略信息（数量由 `limit` 决定，默认 50，最多 100） |
 
 **重要说明：**
 
 - `recentCount` 表示用户在最近两周内玩过的**所有游戏总数**（由 Steam 决定）
 - `recentGames` 中的游戏数量等于 `recentCount`（API 返回所有最近游戏）
-- `allGames` 中的游戏最多为 limit 个（默认 100，最多 100），**按总游玩时长降序排序**
+- `allGames` 中的游戏最多为 limit 个（默认 50，最多 100），**按总游玩时长降序排序**
+- `totalCount` 是全量游戏库的游戏总数（服务端全量拉取后本地统计），不受 `limit` 影响；`allGames` 只是其中游玩时长最靠前的 limit 个
+- 没有成就系统的游戏，其 `achievements` 字段会**缺失**而不是返回全 0。实测约 140 个游戏的库里，100 个返回项中有 10 个属于这种情况。服务端会为每个这样的游戏记一条 WARN 日志，这是正常行为，不影响该端点返回 200
 
 **RecentGame 字段：**
 
@@ -450,11 +496,11 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 
 **重要说明：**
 
-- `recentGames` 中返回的游戏与 `achievements.byGame` 中的游戏完全对应
-- 每个最近游戏都包含了其成就统计信息（`total`、`unlocked`、`percentage`）
-- `allGames` 中的前50个游戏也包含成就统计信息
-- `achievements.byGame` 中提供了这些游戏所有成就的详细信息（成就列表）
-- `achievements.totalCount` 和 `unlockedCount` 是所有这些游戏（最近游戏 + 游戏库前50个）的成就总和
+- `recentGames` 中返回的游戏与 `achievements.byGame` 中的游戏一一对应（最近游玩固定取 Steam 返回的最近 10 个）
+- 每个最近游戏都包含了其成就统计信息（`total`、`unlocked`、`percentage`），但没有成就系统的游戏会缺这个字段
+- `allGames` 中的前 limit 个游戏也包含成就统计信息，同样是没有成就系统的游戏会缺这个字段
+- `achievements.byGame` 中提供了这些游戏所有成就的详细信息（成就列表），只包含实际拉到数据的游戏
+- `achievements.totalCount` 和 `unlockedCount` 是所有这些游戏（最近 10 个 + 游戏库前 50 个）的成就总和。注意成就端点固定覆盖游戏库前 50 个，所以 `limit` 调到 100 时 `/api/steam-games` 覆盖的成就游戏会比 `/api/steam-achievements` 更多
 
 **图片 URL 说明：**
 
@@ -520,6 +566,8 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 | `achievements.unlocked` | number | 该游戏已解锁的成就数（可选） |
 | `achievements.percentage` | number | 该游戏的成就完成百分比（可选） |
 
+> 该游戏没有成就系统时，`achievements` 字段会整个缺失（不是全 0），行为与 `/api/steam-games` 一致。
+
 ---
 
 ### 4. Achievements 对象（/api/steam-achievements）
@@ -564,7 +612,9 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 | `totalCount` | number | 所有游戏的成就总数 |
 | `unlockedCount` | number | 已解锁的成就数 |
 | `unlockedPercentage` | number | 解锁百分比（0-100） |
-| `byGame` | array | 按游戏分组的成就数据 |
+| `byGame` | array | 按游戏分组的成就数据。只包含实际拉到成就数据的游戏 |
+
+> 没有成就系统的游戏不会出现在 `byGame` 里，也不计入 `totalCount` 和 `unlockedCount`。这类游戏会为服务端记一条 WARN 日志，是正常行为，端点仍返回 200。
 
 **GameAchievements 字段：**
 
@@ -609,10 +659,12 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 
 | 字段 | 类型 | 说明 |
 |-----|-----|------|
-| `cached` | boolean | 此响应是否来自缓存 |
-| `cachedAt` | string | ISO 8601 格式的缓存时间 |
-| `cacheExpiry` | string | 缓存过期时间 |
-| `fetchDuration` | string | 数据获取耗时 |
+| `cached` | boolean | 源站进程内缓存是否命中。**不代表 CDN 边缘是否命中**——边缘命中时请求根本不会到达源站，这个值无从体现 |
+| `cachedAt` | string | ISO 8601 格式。缓存命中时是数据写入缓存的时间，未命中时是本次响应生成时间 |
+| `cacheExpiry` | string | ISO 8601 格式的缓存过期时间，等于 `cachedAt` 加上该端点的 TTL |
+| `fetchDuration` | string | 本次处理耗时，形如 `1234ms`。源站缓存命中时通常是个很小的值 |
+
+> 四个端点的信封结构完全一致：`{ success: true, data, metadata }`。`data` 里的顶级键各端点不同（见下文），`metadata` 在所有端点上都存在。
 
 ---
 
@@ -751,7 +803,7 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 ```json
 {
   "success": false,
-  "error": "Game with appId 999999 not found in user's library",
+  "error": "Game not found in user's library",
   "code": "GAME_NOT_FOUND"
 }
 ```
@@ -768,6 +820,52 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 1. 确保 `appid` 值正确
 2. 确保该游戏已购买或已添加到用户的库中
 3. 可以先调用 `/api/steam-games` 查看用户拥有的所有游戏
+
+#### 9. clear_cache 鉴权失败 (仅限 /api/steam-games)
+
+```json
+{
+  "success": false,
+  "error": "Invalid or missing admin_token",
+  "code": "UNAUTHORIZED"
+}
+```
+
+**状态码**: 401
+
+**原因**: 服务端配置了 `ADMIN_TOKEN`，但请求没带令牌，或带的值与配置不一致。令牌从 `Authorization: Bearer <token>` 请求头读取，缺失时才回退到 `?admin_token=` 查询参数；两者都带时以请求头为准。
+
+**解决方案**: 补上正确的令牌，例如 `curl "http://localhost:4000/api/steam-games?clear_cache=true" -H "Authorization: Bearer your_token"`，或 `?admin_token=your_token`。未配置 `ADMIN_TOKEN` 时不会返回这个错误，`clear_cache` 保持公开。鉴权只在带了 `clear_cache=true` 时才触发，普通请求不需要令牌。
+
+#### 10. 内部错误 (仅限本地 Express 服务器)
+
+```json
+{
+  "success": false,
+  "error": "Internal server error",
+  "code": "INTERNAL_ERROR"
+}
+```
+
+**状态码**: 500
+
+**原因**: Express 层的兜底错误处理被触发，说明请求没有走到 `handleRequest`，或者在写回响应时出错。Vercel / Netlify / Cloudflare Workers 不会出现这个错误码，它们统一返回 `STEAM_API_ERROR`。
+
+### 错误码速查
+
+| 错误码 | 状态码 | 触发条件 |
+|-------|-------|---------|
+| `METHOD_NOT_ALLOWED` | 405 | 非 GET / OPTIONS 请求 |
+| `NOT_FOUND` | 404 | 路径不是四个端点之一 |
+| `MISSING_PARAM` | 400 | `/api/steam-game` 未提供 `appid` |
+| `INVALID_PARAM` | 400 | `/api/steam-game` 的 `appid` 不是正整数 |
+| `UNAUTHORIZED` | 401 | `/api/steam-games` 的 `clear_cache` 鉴权失败（仅在配置了 `ADMIN_TOKEN` 且带了 `clear_cache` 时可能发生） |
+| `GAME_NOT_FOUND` | 404 | `/api/steam-game` 的游戏不在用户库里 |
+| `ENV_ERROR` | 500 | `STEAM_API_KEY` 或 `STEAM_USER_ID` 未配置，或 `STEAM_USER_ID` 不是 17 位数字 |
+| `STEAM_API_ERROR` | 500 | 任何端点在请求 Steam 时抛出的异常（含 Steam 8 秒超时） |
+| `INTERNAL_ERROR` | 500 | 仅 Express：Express 层兜底错误处理 |
+
+所有错误响应的信封都是 `{ "success": false, "error": "...", "code": "..." }`，没有 `data` 和 `metadata`。
 
 ---
 
@@ -823,21 +921,66 @@ Steam 商店价格、货币等信息由 `cc` 查询参数控制：
 
 **说明**:
 
-- `limit` 参数：控制返回游戏的数量，取值范围 1-100，默认值 100
+- `limit` 参数：控制返回游戏的数量，取值范围 1-100，默认值 50
+- 超出范围或非法的值（非整数、缺省）会回退为默认值 50，不会返回错误
 - 返回的游戏**按总游玩时长（`playtimeForever`）降序排序**
 - 示例：`/api/steam-games?limit=30` 返回按时长排序的前 30 个游戏
+- 调大 `limit` 会明显拉长冷请求耗时（100 个约 7.4 ~ 9.1 秒，50 个约 8.1 秒，差距不大是因为单次全量 `GetOwnedGames` 固定占约 5 秒），默认 50 是为了给 Vercel Hobby 的 10 秒函数上限留余量
 
 ### 缓存配置
+
+缓存分两层，两层用同一组环境变量：
+
+1. **源站进程内缓存** —— 服务端按 TTL 缓存渲染好的响应数据，避免重复请求 Steam
+2. **CDN 边缘缓存** —— 响应头声明 `Cache-Control: public, s-maxage=<秒>, stale-while-revalidate=<秒>`，边缘节点在 TTL 内直接返回副本，连源站都不回
+
+`stale-while-revalidate` 取 `s-maxage` 和 3600 秒中的较小值：24 小时级别的端点不会挂一个同样长的 revalidate 窗口，避免过期数据滞留太久。TTL 到期后边缘会先返回旧数据，同时异步回源刷新。
 
 | 数据类型 | 默认 TTL | 环境变量 |
 |--------|---------|---------|
 | 用户信息 | 10 分钟 | `CACHE_TTL_USER_MINUTES` |
-| 游戏信息 | 24 小时 | `CACHE_TTL_GAMES_HOURS` |
+| 游戏信息（游戏库、单游戏） | 24 小时 | `CACHE_TTL_GAMES_HOURS` |
 | 成就信息 | 1 小时 | `CACHE_TTL_ACHIEVEMENTS_HOURS` |
 
 ### 缓存键
 
-缓存键格式: `steam-user-{STEAM_USER_ID}`
+**CDN 边缘缓存**以完整请求 URL 为键，因此查询参数是缓存键的一部分：
+
+- `/api/steam-games?limit=30` 和 `/api/steam-games?limit=50` 是两份独立缓存
+- `/api/steam-games?cc=us` 和 `/api/steam-games?cc=jp` 也是两份独立缓存
+- 带 `clear_cache` 的请求用于主动失效，不应被当作常规可缓存请求——这类响应会带 `Cache-Control: no-store`，边缘不会存它
+
+调小 `limit` 或频繁切换 `cc` 会降低边缘命中率。
+
+**源站进程内缓存**的键按数据类型区分：
+
+| 端点 | 缓存键 |
+|-----|--------|
+| `/api/steam-user` | `steam-user-{STEAM_USER_ID}` |
+| `/api/steam-games` | `steam-games-{STEAM_USER_ID}-limit{limit}` |
+| `/api/steam-game` | `steam-game-{STEAM_USER_ID}-{appid}` |
+| `/api/steam-achievements` | `steam-achievements-{STEAM_USER_ID}` |
+
+进程内缓存不区分 `cc`（语言和地区由构造函数参数传入，不进缓存键），所以切换 `cc` 时源站仍可能返回上一个地区的价格；边缘缓存因为按 URL 分键，能正确隔离。
+
+### 强制刷新缓存
+
+`/api/steam-games` 支持 `clear_cache` 参数主动失效游戏库缓存：
+
+```bash
+# 未配置 ADMIN_TOKEN
+curl "http://localhost:4000/api/steam-games?clear_cache=true"
+
+# 配置了 ADMIN_TOKEN（推荐用请求头，查询参数会进入 CDN 缓存键和访问日志）
+curl "http://localhost:4000/api/steam-games?clear_cache=true" -H "Authorization: Bearer your_token"
+
+# 等价写法：退回查询参数
+curl "http://localhost:4000/api/steam-games?clear_cache=true&admin_token=your_token"
+```
+
+其他端点没有对应的失效参数，只能等待 TTL 到期。
+
+实际执行了清缓存的这次响应带 `Cache-Control: no-store`，不会被边缘缓存。`clear_cache` 清除的只是源站进程内缓存（`clearGamesCache` 会遍历清掉所有 limit 的游戏库缓存键），边缘缓存要等自己的 TTL 到期。
 
 ### 调整缓存策略
 
@@ -852,6 +995,9 @@ CACHE_TTL_GAMES_HOURS=48
 
 # 成就信息缓存时长（小时）
 CACHE_TTL_ACHIEVEMENTS_HOURS=2
+
+# clear_cache 的鉴权令牌，强烈建议在公网部署时设置
+ADMIN_TOKEN=your_admin_token
 ```
 
 ---
@@ -862,13 +1008,24 @@ CACHE_TTL_ACHIEVEMENTS_HOURS=2
 
 | 场景 | 平均时间 |
 |-----|--------|
-| 缓存命中 | < 10ms |
-| 首次请求 | 2-5秒 |
-| Steam API 超时 | > 30秒 |
+| CDN 边缘缓存命中 | < 100ms（不回源） |
+| 源站进程内缓存命中 | < 10ms（不请求 Steam） |
+| `/api/steam-user` 首次请求 | 1-2 秒 |
+| `/api/steam-games` 首次请求（默认 limit=50） | 约 8.1 秒（实测，140 游戏库） |
+| `/api/steam-games` 首次请求（`limit=100`） | 7.4 ~ 9.1 秒（实测，140 游戏库） |
+| `/api/steam-achievements` 首次请求 | 约 2.6 秒（实测） |
+| 单个 Steam 请求超时 | 8 秒后放弃（Steam 商店接口 5 秒） |
 
-### 并发限制
+> `/api/steam-games` 的冷请求耗时里，单次全量 `GetOwnedGames`（`include_appinfo=true`）固定占约 5 秒，100 个游戏的成就只占约 4 秒。完整实测数据见前文「游戏库耗时的实测数据」。
 
-- 无硬并发限制
+### 超时与并发
+
+- 所有对 Steam Web API 的请求都带 8 秒超时，Steam 商店（appdetails）接口是 5 秒。Steam 不可达时请求会明确失败并返回 `STEAM_API_ERROR`，不会无限挂起
+- 成就数据（`GetPlayerAchievements` + `GetSchemaForGame`）按游戏并发拉取，**并发上限 16**，可用 `STEAM_CONCURRENCY` 环境变量覆盖（正整数，非法值回退为 16）
+- 并发上限是实测值：并发 16 在真实 Steam 数据上未出现 429 限流、未超时。不再保留早期为躲限流加的固定 sleep，请求直接按并发窗口发出
+- 单个游戏的成就请求失败不会影响整个响应，该游戏只是没有成就数据
+- 没有成就系统的游戏（实测 100 个游戏里有 10 个）会记一条 WARN 日志，该游戏没有成就数据、不计入成就覆盖统计，这是正常行为不是错误
+- 无对外硬并发限制
 - Steam API 限制: ~1600 请求/秒
 
 ### 带宽使用
@@ -885,11 +1042,15 @@ A: 不能。本 API 仅返回在部署时配置的单个 Steam 用户的信息�
 
 **Q: 如何强制刷新缓存？**
 
-A: 目前不支持。请等待缓存过期或重启服务器。
+A: `/api/steam-games` 支持 `clear_cache=true` 主动清除游戏库缓存。服务端配置了 `ADMIN_TOKEN` 时必须带上令牌，推荐用 `Authorization: Bearer <值>` 请求头，也兼容 `?admin_token=<值>` 查询参数，否则返回 401。其他端点（用户信息、成就）只能等缓存自然过期。这次清缓存请求的响应带 `Cache-Control: no-store`，不会被边缘缓存。
+
+**Q: 缓存是存在服务端的吗？**
+
+A: 两层都有。源站有一层进程内缓存，边缘还有一层 CDN 缓存。响应里的 `metadata.cached` 只反映源站那层，边缘命中时请求根本到不了源站。
 
 **Q: 支持哪些成就？**
 
-A: 所有有成就系统的 Steam 游戏。API 返回最近玩过的游戏的成就详情（最近两周内实际玩过的游戏）。
+A: 所有有成就系统的 Steam 游戏。`/api/steam-achievements` 覆盖最近玩过的 10 个游戏加上游戏库中游玩时长最靠前的 50 个（`byGame` 里有实际返回结果的才算）。成就按游戏并发拉取（并发上限 16），单个游戏拉取失败只会让该游戏没有成就数据，不影响其他游戏。没有成就系统的游戏不会出现在 `byGame` 里，服务端会为它记一条 WARN 日志，这是正常行为。
 
 **Q: 为什么返回的最近游戏数量很少？**
 
@@ -901,7 +1062,11 @@ A: 不能。最近游戏数量完全由 Steam API 决定，无法通过配置改
 
 **Q: 能改变游戏库返回的数量吗？**
 
-A: 可以。使用 `limit` 查询参数自定义返回的游戏数量。例如 `/api/steam-games?limit=30` 会返回前 30 个游戏。支持范围：1-100。
+A: 可以。使用 `limit` 查询参数自定义返回的游戏数量，默认 50，支持范围 1-100。例如 `/api/steam-games?limit=30` 会返回前 30 个游戏，`?limit=100` 会拉满。超出范围或非法的值会回退为默认的 50，不会报错。调大 `limit` 会拉长冷请求耗时，Vercel Hobby 的函数上限是 10 秒，默认值 50 就是为此留的余量。
+
+**Q: 为什么有的游戏没有 `achievements` 字段？**
+
+A: 该游戏没有成就系统，Steam 返回的成就列表是空的。这种情况下 `achievements` 字段直接缺失（不是全 0），该游戏也不计入成就覆盖统计。实测约 140 个游戏的库里，100 个返回项中有 10 个属于这种情况。服务端会为每个这样的游戏记一条 WARN 日志，这是正常行为，端点仍返回 200。
 
 **Q: 游戏库是按什么顺序返回的？**
 
@@ -919,8 +1084,7 @@ A: 不支持。该端点仅返回用户已购买或拥有的游戏。如果查�
 
 A: 这是 Steam CDN 的临时问题。所有图片 URL 都是有效的公开 Steam CDN 链接。
 
----
+**Q: 四个平台的响应会不一样吗？**
 
-```
+A: 不会。四个平台共用同一个请求处理核心（`lib/app.ts` 的 `handleRequest`），响应结构、错误码、查询参数完全一致。平台入口只负责把调用转成 Web 标准 `Request` 再把 `Response` 写回。
 
----

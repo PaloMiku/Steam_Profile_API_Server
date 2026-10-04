@@ -2,40 +2,45 @@
   "name": "steam-profile-api",
   "version": "1.0.0",
   "description": "Serverless API to fetch Steam user profile information including games and achievements with image URLs",
-  "main": "dist/server.js",
+  "main": "server.ts",
   "type": "module",
+  "packageManager": "pnpm@11.22.0",
   "scripts": {
-    "prebuild": "tsx scripts/build.ts",
-    "build": "tsc",
-    "build:platforms": "npm run build",
+    "typecheck": "tsc -p tsconfig.check.json",
+    "build": "tsc -p tsconfig.check.json",
+    "build:platforms": "tsc -p tsconfig.check.json",
     "dev": "tsx watch server.ts",
-    "start": "node dist/server.js",
-    "test": "node --test dist/**/*.test.js",
-    "postbuild": "node -e \"if(process.env.NETLIFY) require('./scripts/cleanup-functions.js')\""
+    "start": "tsx server.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint ."
   },
   "keywords": [
-  "steam",
-  "api",
-  "vercel",
-  "netlify",
-  "serverless",
-  "games",
-  "achievements"
+    "steam",
+    "api",
+    "vercel",
+    "netlify",
+    "serverless",
+    "games",
+    "achievements"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "@vercel/node": "^3.0.0"
+    "dotenv": "^17.0.0",
+    "express": "^5.1.0"
   },
   "devDependencies": {
-    "@types/node": "^20.8.0",
-    "@types/express": "^4.17.20",
-    "typescript": "^5.2.2",
-    "tsx": "^3.13.0"
+    "@eslint/js": "^9.0.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.0.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   }
 }
