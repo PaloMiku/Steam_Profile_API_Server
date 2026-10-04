@@ -27,6 +27,7 @@ lib/
   handler.ts    各端点的数据获取逻辑与环境变量校验
   steam-api.ts  Steam Web API / 商店 API 封装
   node-shim.ts  Node 风格 (req, res) → Web 标准 Request/Response 的适配
+  pool.ts       并发受限的批量请求工具（成就拉取）
   cache.ts      缓存存储实现
   types.ts      共享类型定义
   utils.ts      日志、图片 URL 构建等工具
@@ -35,6 +36,7 @@ api/*.ts                    Vercel 函数（4 个端点，每个只做一次转�
 netlify/functions/*.ts      Netlify 函数（4 个端点，每个只做一次转发）
 src/index.ts                Cloudflare Worker 入口
 server.ts                   本地 Express 服务器
+test/                       Vitest 单元测试（全部离线，不发真实 Steam 请求）
 ```
 
 四个入口都只做一件事：把平台自己的调用方式转成 Web 标准 `Request`，交给 `handleRequest`，再把 `Response` 写回。因此四个平台的响应结构、错误码和缓存行为完全一致，修改业务逻辑只需要改 `lib/` 下的文件。
@@ -66,7 +68,7 @@ server.ts                   本地 Express 服务器
 
 - Node.js 22+
 - Steam Web API Key（获取地址：<https://steamcommunity.com/dev/apikey>）
-- 你的 Steam ID 64位号码（查询：<https://steamid.io>）
+- 你的 Steam ID，17 位纯数字（查询：<https://steamid.io>）
 
 包管理器推荐用 pnpm（仓库带 `pnpm-lock.yaml`），`npm` 同样可用。
 
@@ -91,9 +93,9 @@ server.ts                   本地 Express 服务器
 2. 连接到 Netlify
 3. 添加环境变量 STEAM_API_KEY 和 STEAM_USER_ID
 4. 配置构建命令: `npm run build:platforms`
-5. 发布目录: `dist`
+5. 发布目录留空即可
 
-> 注意：`build:platforms` 目前是 `tsc --noEmit` 的纯类型检查，不产出 `dist/`。四个平台都直接吃仓库里的 TypeScript 源文件（Vercel / Netlify 走各自的构建器，Cloudflare 用 esbuild，Express 用 tsx），发布目录实际可以留空。
+> `build:platforms` 是 `tsc --noEmit` 的纯类型检查，不产出 `dist/`。Netlify 自己用 esbuild 编译 `netlify/functions/` 下的 TypeScript 源文件（见 `netlify.toml` 的 `functions` 配置），发布目录实际用不到。
 
 #### Cloudflare Workers
 
@@ -110,8 +112,9 @@ cd Steam_Profile_API_Server
 pnpm install
 
 # 3. 配置环境变量
-cp .env.example .env.local
-# 编辑 .env.local，添加 STEAM_API_KEY 和 STEAM_USER_ID
+# server.ts 用 dotenv/config 加载 .env（不读 .env.local，那是 Next.js 的约定）
+cp .env.example .env
+# 编辑 .env，添加 STEAM_API_KEY 和 STEAM_USER_ID
 
 # 4. 开发运行（tsx watch，改动自动重启）
 pnpm run dev
@@ -138,7 +141,7 @@ pnpm start
 
 ### CI
 
-`.github/workflows/ci.yml` 在 push 到 `main` 和所有 PR 上运行，使用 Node.js 22 + pnpm 10，依次执行 `typecheck`、`lint`、`test`。本地跑通这三条命令即可认为与 CI 一致。
+`.github/workflows/ci.yml` 在 push 到 `main` 和所有 PR 上运行，使用 Node.js 22 + pnpm 11（版本由 `package.json` 的 `packageManager` 字段锁定，本地与 CI 一致），依次执行 `typecheck`、`lint`、`test`。本地跑通这三条命令即可认为与 CI 一致。
 
 ## 环境变量
 
@@ -147,7 +150,7 @@ pnpm start
 | 变量 | 说明 |
 |------|------|
 | `STEAM_API_KEY` | Steam Web API 密钥，<https://steamcommunity.com/dev/apikey> 获取 |
-| `STEAM_USER_ID` | Steam 64 位 ID，必须是 17 位纯数字，<https://steamid.io> 查询 |
+| `STEAM_USER_ID` | Steam ID，必须是 17 位纯数字（`/^\d{17}$/`），<https://steamid.io> 查询 |
 
 ### 可选
 
@@ -159,10 +162,10 @@ pnpm start
 | `CACHE_TTL_USER_MINUTES` | 10 | `/api/steam-user` 的缓存时长（分钟） |
 | `CACHE_TTL_GAMES_HOURS` | 24 | `/api/steam-games`、`/api/steam-game` 的缓存时长（小时） |
 | `CACHE_TTL_ACHIEVEMENTS_HOURS` | 1 | `/api/steam-achievements` 的缓存时长（小时） |
-| `LOG_LEVEL` | `info` | 日志级别：`debug` / `info` / `warn` / `error` |
+| `LOG_LEVEL` | `info` | 只有 `debug` 和 `info` 会输出 INFO 级日志；`debug` 另外输出 DEBUG 级。`warn` / `error` 日志不受此变量影响，任何取值都会输出 |
 | `PORT` | 4000 | 本地服务器端口（Vercel / Netlify 会自动注入 `PORT`） |
 
-完整模板参见 [.env.example](./.env.example)（注意 `.env.example` 目前还没有列 `STEAM_CONCURRENCY`，需要的话手动补一行即可）。
+完整模板参见 [.env.example](./.env.example)。
 
 > 公网部署时建议设置 `ADMIN_TOKEN`，否则任何人都能通过 `?clear_cache=true` 反复让缓存失效，把请求打到源站和 Steam 上。
 
@@ -180,7 +183,7 @@ pnpm start
 
 1. 访问 <https://steamid.io>
 2. 输入你的 Steam 用户名或个人资料链接
-3. 复制 64位 的 Steam ID
+3. 复制 17 位的 Steam ID
 
 或者直接访问你的 Steam 个人资料页面，URL 中的数字就是你的 Steam ID。
 
@@ -199,7 +202,7 @@ pnpm start
 
 1. 确认用的是 `npm run dev`（即 `tsx watch server.ts`），而不是手动去 `node` 某个编译产物——本项目直接用 tsx 跑 TypeScript，没有 `dist/` 目录
 2. 端口被占用时服务器会自动回退到随机端口，实际端口会打印在启动横幅里
-3. 需要看完整报错时把 `LOG_LEVEL=debug` 写进 `.env.local`
+3. 需要看完整报错时把 `LOG_LEVEL=debug` 写进 `.env`
 
 **缓存如何工作？**
 

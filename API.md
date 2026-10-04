@@ -350,7 +350,7 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 ```typescript
 {
   "user": {
-    "steamid": "76561198123456789",           // Steam 64位ID
+    "steamid": "76561198123456789",           // Steam ID，17 位纯数字
     "username": "YourUsername",               // 用户名
     "profileUrl": "https://steamcommunity.com/profiles/...",
     "avatar": {
@@ -376,7 +376,7 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 
 | 字段 | 类型 | 说明 |
 |-----|-----|------|
-| `steamid` | string | Steam 64位 ID，唯一标识符 |
+| `steamid` | string | Steam ID（17 位纯数字），唯一标识符 |
 | `username` | string | 用户当前的昵称 |
 | `profileUrl` | string | Steam 社区个人资料页面 URL |
 | `avatar.small` | string | Steam CDN 上的小头像（32x32） |
@@ -708,7 +708,7 @@ curl -X GET "http://localhost:4000/api/steam-achievements"
 **解决方案**:
 
 1. 访问 https://steamid.io
-2. 输入 Steam 用户名查询正确的 64 位 ID
+2. 输入 Steam 用户名查询正确的 17 位 ID
 3. 确保 ID 是 17 位纯数字
 
 #### 3. 用户资料是私密的
