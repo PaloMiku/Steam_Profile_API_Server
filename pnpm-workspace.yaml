@@ -1,5 +1,8 @@
-# pnpm 11 要求把需要执行构建脚本的依赖显式声明在这里，
-# 否则 esbuild 的安装脚本会被跳过，导致 vitest 无法启动。
-# esbuild 同时是 Netlify (node_bundler = "esbuild") 构建时需要的。
+# esbuild 的 postinstall 必须放行，否则 Netlify 构建与 vitest 都起不来
 allowBuilds:
   esbuild: true
+
+# eslint 的传递依赖 minmatch 依赖 brace-expansion，其多个 DoS 公告
+# 要求 >=1.1.21。pnpm 11 起 overrides 从 package.json 移到这里。
+overrides:
+  brace-expansion: ^1.1.21
